@@ -603,7 +603,7 @@ const BODIES=[
 
 // [brand, name, id, squeeze, coverage, primes[], zoom[min,max]]
 const LENSES=[
- ['ARRI','Signature Prime','sig',1,'LF',[12,15,18,21,25,29,35,40,47,58,75,95,125,150,200,280]],
+ ['ARRI','Signature Prime','sig',1,'LF',[12,15,18,21,25,29,35,40,47,58,75,95,125,150,200,300,400,600,800,1200]],
  ['ARRI','Signature Zoom 24-75','sigz',1,'LF',null,[24,75]],
  ['ARRI','Prime 65 S','p65',1,'65',[35,45,55,80,100,150]],
  ['ARRI/ZEISS','Master Prime','mp',1,'S35',[12,14,16,18,21,25,27,32,35,40,50,65,75,100,135,150]],
@@ -635,7 +635,7 @@ const LENSES=[
  ['Angénieux','Optimo Ultra 12x 36-435','opt36',1,'FF',null,[36,435]],
  ['Fujinon','Premista 28-100','prem28',1,'FF',null,[28,100]],
  ['Fujinon','Premista 80-250','prem80',1,'FF',null,[80,250]],
- ['Custom','사용자 지정 mm','custom',1,'IMAX',null,[6,600]],
+ ['Custom','사용자 지정 mm','custom',1,'IMAX',null,[6,1200]],
 ].map(a=>({brand:a[0],name:a[1],id:a[2],sq:a[3],cov:a[4],primes:a[5],zoom:a[6]||null}));
 const COV={S16:16.5,S35:31.5,FF:46.5,LF:46.5,VV:46.5,'65':60,IMAX:88};
 const ASPECTS=[['native','센서 원본'],['2.39','2.39:1 시네마스코프'],['2.76','2.76:1 Ultra Panavision 70'],['2.20','2.20:1 70mm'],['2.00','2.00:1 유니비지움'],['1.90','1.90:1 IMAX 디지털'],['1.85','1.85:1 비스타'],['1.78','1.78:1 (16:9)'],['1.43','1.43:1 IMAX 70mm'],['1.33','1.33:1 (4:3)'],['1.00','1.00:1 정사각']];

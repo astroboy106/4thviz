@@ -249,16 +249,16 @@ footer{background:var(--panel);border-top:1px solid var(--line);display:flex;min
 #tl{display:none;flex:1;min-width:0;flex-direction:column}
 #app.tl #tl{display:flex}
 #app.tl footer .scol,#app.tl #strip{display:none}
-.tlbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tlbar{display:flex;flex-wrap:nowrap;overflow-x:auto;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line)}
 .tlbar::-webkit-scrollbar{display:none}
-.tlbar button{height:32px;padding:0 10px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);font:500 12px var(--sans);white-space:nowrap;flex:none}
+.tlbar button{height:30px;padding:0 7px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);font:500 11.5px var(--sans);white-space:nowrap;flex:none}
 .tlbar button.pl{width:44px;background:var(--acc);border-color:var(--acc);color:#111;font-weight:700}
 .tlbar button.on{background:var(--acc2);border-color:var(--acc2);color:#04151d;font-weight:600}
 .tlbar button:disabled{opacity:.35}
 .tlbar button.rec{color:var(--red);border-color:#5a2a2a}
 body.recording .tlbar button.rec{background:var(--red);color:#fff}
-.tlbar select{width:80px;height:32px;flex:none}
-.tlbar span{font:600 12px var(--mono);color:var(--tx);min-width:118px;text-align:center;flex:none}
+.tlbar select{width:auto;min-width:58px;height:30px;padding:0 4px;flex:none}
+.tlbar span{font:600 11.5px var(--mono);color:var(--tx);min-width:0;white-space:nowrap;text-align:center;flex:none}
 .tlbar i{width:1px;height:20px;background:var(--line2);flex:none;margin:0 3px}
 #tlBody{position:relative;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:none}
 .tlr{display:flex;height:28px;border-bottom:1px solid var(--line)}
@@ -515,8 +515,8 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
       <div class="tlbar">
         <button id="tlStart" title="처음으로">⏮</button><button id="tlPlay" class="pl">▶</button><span id="tlTime">00:00.0</span>
         <select id="tlDur"><option value="5">5초</option><option value="10">10초</option><option value="15">15초</option><option value="20">20초</option><option value="30">30초</option><option value="45">45초</option><option value="60">60초</option><option value="90">90초</option><option value="120">120초</option></select>
-        <select id="tlFps" title="프레임레이트"><option value="24">24fps</option><option value="25">25fps</option><option value="30">30fps</option><option value="60">60fps</option></select><i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">키 삭제</button><button id="tlIp" disabled>보간</button><button id="tlClear">트랙 비우기</button><button id="tlAuto">자동 키</button>
-        <i></i><button id="tlIn">IN</button><button id="tlOut">OUT</button><button id="tlRngX">구간 해제</button><button id="tlLoop">반복</button>
+        <select id="tlFps" title="프레임레이트"><option value="24">24fps</option><option value="25">25fps</option><option value="30">30fps</option><option value="60">60fps</option></select><i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">삭제</button><button id="tlIp" disabled>보간</button><button id="tlClear">비우기</button><button id="tlAuto">자동</button>
+        <i></i><button id="tlIn">IN</button><button id="tlOut">OUT</button><button id="tlRngX">해제</button><button id="tlLoop">반복</button>
         <i></i><button id="tlRec" class="rec">● 녹화</button>
       </div>
       <div id="tlBody"><div id="tlRows"></div><div id="tlHead"></div></div>
@@ -2177,7 +2177,7 @@ function renderTL(){
   renderPlayhead();
 }
 function renderPlayhead(){
-  const A=animData(); $('#tlTime').textContent=tc(TL.t)+' / '+tc(A.dur)+' · F'+(Math.round(TL.t*FPS())+1);
+  const A=animData(); $('#tlTime').textContent=tc(TL.t)+'/'+tc(A.dur)+' F'+(Math.round(TL.t*FPS())+1);
   const lane=$('#tlRows .lane'); if(!lane) return;
   const bx=$('#tlBody').getBoundingClientRect(), lx=lane.getBoundingClientRect();
   $('#tlHead').style.left=(lx.left-bx.left+TL.t/A.dur*lx.width)+'px';

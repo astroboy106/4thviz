@@ -1338,8 +1338,9 @@ function removeObject(root){
 function objName(o){const k=o.userData.kind; return k==='imported'?(o.userData.params.name||'모델'):(KINDS[k]?.n||'');}
 /* selection box */
 let selBox=null;
+let CT='cam'; // control target: 'cam' or 'obj'
 function select(root){
-  selected=root;
+  selected=root; CT=root?'obj':'cam'; if(typeof renderTools==='function') renderTools();
   if(selBox){scene.remove(selBox);selBox.geometry.dispose();selBox=null;}
   if(root){selBox=new THREE.BoxHelper(root,0xf2b33d); selBox.layers.enableAll(); scene.add(selBox);}
   $('#selBar').style.display=root?'flex':'none'; if(root&&S.tlOn){ TL.sel=root.userData.uid; } if(typeof renderTL==='function') try{renderTL();}catch(e){} if(root) $('#sbName').textContent=objName(root);
@@ -1590,7 +1591,7 @@ canvas.addEventListener('pointerdown',e=>{
     if(gest.pip){ gest.pipObj=pipPick(p.x,p.y); }
     else{
       const hit=pick(p.x,p.y); gest.hit=hit;
-      if(hit&&!(S.full&&S.dof)&&(S.mode==='select'||hit===selected)){select(hit); const gp=groundHit(p.x,p.y); gest.drag=hit; gest.off=gp?hit.position.clone().sub(gp):new THREE.Vector3();}
+      if(hit&&!(S.full&&S.dof)&&S.mode==='select'){select(hit); const gp=groundHit(p.x,p.y); gest.drag=hit; gest.off=gp?hit.position.clone().sub(gp):new THREE.Vector3();}
     }
   } else if(ptrs.size===2){
     const [a,b]=[...ptrs.values()];
@@ -1608,6 +1609,7 @@ canvas.addEventListener('pointermove',e=>{
     if(gest.pip){ pipDrag(gest,dx,dy,p); return; }
     if(gest.drag){ const gp=groundHit(p.x,p.y); if(gp){gest.drag.position.set(gp.x+gest.off.x,0,gp.z+gest.off.z); updatePosReadout();} return; }
     const m=S.mode==='select'?'pantilt':S.mode;
+    if(CT==='obj'&&selected){ objGesture(m,dx,dy,k,inv); updatePosReadout(); renderSelRot(); return; }
     if(m==='pantilt'){ c.yaw-=dx*k*inv; c.pitch-=dy*k*inv; }
     else if(m==='dolly'){ const f=fwdFlat(), r=rightFlat(); const s=.02*sp*inv;
       c.pos[0]+=(-dy*f.x+dx*r.x)*s; c.pos[2]+=(-dy*f.z+dx*r.z)*s; }
@@ -1620,7 +1622,7 @@ canvas.addEventListener('pointermove',e=>{
     const d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2, ang=Math.atan2(b.y-a.y,b.x-a.x);
     const dd=d-gest.d, mdx=mx-gest.mx, mdy=my-gest.my; let da=ang-gest.ang; if(da>Math.PI)da-=Math.PI*2; if(da<-Math.PI)da+=Math.PI*2;
     gest.d=d;gest.mx=mx;gest.my=my;gest.ang=ang;
-    if(inPip(mx,my)){ S.mapZoom=clamp(S.mapZoom*(1-dd*.006),3,150); return; }
+    if(inPip(mx,my)){ S.mapZoom=clamp(S.mapZoom*(1-dd*.006),0.5,150); return; }
     if(S.mode==='select'&&selected&&Math.abs(da)>.002){ selected.rotation.y-=da; renderSelRot(); }
     const f=fwd(); const s=dd*.02*sp;
     c.pos[0]+=f.x*s; c.pos[1]+=f.y*s; c.pos[2]+=f.z*s;
@@ -1634,7 +1636,7 @@ function endPtr(e){
   if(!ptrs.has(e.pointerId)) return;
   const pr=ptrs.get(e.pointerId); ptrs.delete(e.pointerId);
   if(gest&&gest.type==='one'&&!gest.moved&&!gest.pip){ if(S.full&&S.dof) focusTap(gest.x,gest.y); else { select(gest.hit||null); if(gest.hit) showTab('sel'); } }
-  if(gest&&gest.type==='one'&&!gest.moved&&gest.pip){ const po=gest.pipObj; if(po==='cam') showTab('cam'); else if(po&&po!=='aim'){ select(po); showTab('sel'); } }
+  if(gest&&gest.type==='one'&&!gest.moved&&gest.pip){ const po=gest.pipObj; if(po==='cam'){ CT='cam'; renderTools(); showTab('cam'); } else if(po&&po!=='aim'){ select(po); showTab('sel'); } }
   if(gest&&(gest.drag||gest.type==='one'||gest.type==='two')) {syncCamUI(); save();}
   if(ptrs.size===0) gest=null;
   else if(ptrs.size===1){ gest={type:'one',moved:true}; }
@@ -1643,6 +1645,15 @@ canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercan
 document.addEventListener('gesturestart',e=>e.preventDefault());
 
 function pivot(){ if(selected){const b=new THREE.Box3().setFromObject(selected); const c=b.getCenter(new THREE.Vector3()); c.y=Math.min(c.y,1.4); return c;} return new THREE.Vector3().fromArray(S.cam.pos).add(fwd().multiplyScalar(S.cam.focus)); }
+function objGesture(m,dx,dy,k,inv){
+  const o=selected, dist=Math.max(1,new THREE.Vector3().fromArray(S.cam.pos).distanceTo(o.position)), wpp=dist*k;
+  if(m==='pantilt'){ o.rotation.y-=dx*k*inv; o.rotation.x=clamp(o.rotation.x-dy*k*inv,-1.2,1.2); }
+  else if(m==='dolly'){ const f=fwdFlat(), r=rightFlat(); o.position.x+=(-dy*f.x+dx*r.x)*wpp*inv; o.position.z+=(-dy*f.z+dx*r.z)*wpp*inv; }
+  else if(m==='boom'){ o.position.y=Math.max(0,o.position.y-dy*wpp*inv); }
+  else if(m==='roll'){ o.rotation.z=clamp(o.rotation.z-dx*.004*inv,-1.2,1.2); }
+  else if(m==='orbit'){ const cen=aimPoint(), a=-dx*.006*inv, ex=o.position.x-cen.x, ez=o.position.z-cen.z, cs=Math.cos(a), sn=Math.sin(a);
+    o.position.x=cen.x+ex*cs+ez*sn; o.position.z=cen.z-ex*sn+ez*cs; o.rotation.y+=a; }
+}
 function orbit(dYaw,dPitch){
   const c=S.cam, pv=pivot(), p=new THREE.Vector3().fromArray(c.pos), off=p.sub(pv);
   const sph=new THREE.Spherical().setFromVector3(off);
@@ -1687,14 +1698,17 @@ $('#pipViews').onclick=e=>{ const b=e.target.closest('[data-v]'); if(b) setMapVi
 /* ================= UI: TOOLS ================= */
 const TOOLS=[
  ['select','선택','<path d="M5 3l14 8-6 2-2 6z"/>'],
+ ['cam','카메라','<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 11l6-3v8l-6-3"/>'],
  ['pantilt','팬·틸트','<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'],
  ['dolly','돌리·트럭','<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M21 12l-3-3M21 12l-3 3"/>'],
  ['boom','붐(높이)','<path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/>'],
  ['orbit','오빗','<ellipse cx="12" cy="12" rx="9" ry="4"/><circle cx="12" cy="12" r="2"/>'],
  ['roll','롤(더치)','<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5M18 3v4h-4M6 21v-4h4"/>'],
 ];
-function renderTools(){ $('#tools').innerHTML=TOOLS.map(([id,n,ic])=>`<button data-m="${id}" class="${S.mode===id?'on':''}"><svg viewBox="0 0 24 24">${ic}</svg>${n}</button>`).join(''); }
-$('#tools').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; S.mode=b.dataset.m; renderTools(); if(S.mode==='select') showTab('sel');});
+function renderTools(){ $('#tools').innerHTML=TOOLS.map(([id,n,ic])=>`<button data-m="${id}" class="${(id==='cam'?CT==='cam':S.mode===id)?'on':''}"><svg viewBox="0 0 24 24">${ic}</svg>${n}</button>`).join(''); }
+$('#tools').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
+  if(b.dataset.m==='cam'){ CT='cam'; renderTools(); showTab('cam'); return; }
+  S.mode=b.dataset.m; renderTools(); if(S.mode==='select') showTab('sel');});
 
 /* ================= UI: CAMERA PANEL ================= */
 function fillSelects(){
@@ -1812,7 +1826,7 @@ function ctlSelect(label,opts,val,on){const d=document.createElement('div'); d.c
 function sec(title,...els){const s=document.createElement('div'); s.className='sec'; s.innerHTML=`<h4>${title}</h4>`; els.forEach(e=>e&&s.appendChild(e)); return s;}
 let rotRow=null;
 function renderSelRot(){ if(rotRow&&selected){const deg=((selected.rotation.y*R2D)%360+360)%360; rotRow.querySelector('input').value=deg; rotRow.querySelector('span').textContent=fmt(deg,0)+'°';} }
-function updatePosReadout(){ const e=$('#posTx'); if(e&&selected) e.textContent=`X ${fmt(selected.position.x,2)}  Z ${fmt(selected.position.z,2)}  · 카메라와 ${fmt(new THREE.Vector3().fromArray(S.cam.pos).setY(0).distanceTo(selected.position),2)}m`; }
+function updatePosReadout(){ const e=$('#posTx'); if(e&&selected) e.textContent=`X ${fmt(selected.position.x,2)}  Y ${fmt(selected.position.y,2)}  Z ${fmt(selected.position.z,2)}  · 카메라와 ${fmt(new THREE.Vector3().fromArray(S.cam.pos).setY(0).distanceTo(selected.position),2)}m`; }
 function renderSel(){
   const B=$('#selBody'); B.innerHTML=''; rotRow=null;
   if(!selected){B.innerHTML='<div class="empty">선택된 오브젝트가 없습니다.<br>화면이나 탑뷰에서 캐릭터·에셋을 탭하세요.<br>탑뷰 맵에서도 탭·드래그로 이동할 수 있습니다.</div>'; return;}
@@ -1862,7 +1876,11 @@ function renderSel(){
   rotRow=ctlSlider('방향',0,359,1,0,v=>fmt(v,0)+'°',v=>{selected.rotation.y=v*D2R;});
   const tc=document.createElement('button'); tc.className='btn'; tc.textContent='카메라 쪽으로 돌리기'; tc.style.marginBottom='6px';
   tc.onclick=()=>{selected.rotation.y=Math.atan2(S.cam.pos[0]-selected.position.x,S.cam.pos[2]-selected.position.z); renderSelRot(); save();};
-  B.appendChild(sec('Transform',rotRow,tc));
+  B.appendChild(sec('Transform',rotRow,
+    ctlSlider('높이',0,8,.01,selected.position.y,v=>fmt(v,2)+'m',v=>{selected.position.y=v;}),
+    ctlSlider('기울기',-1.2,1.2,.01,selected.rotation.x,v=>fmt(v*R2D,0)+'°',v=>{selected.rotation.x=v;}),
+    ctlSlider('롤',-1.2,1.2,.01,selected.rotation.z,v=>fmt(v*R2D,0)+'°',v=>{selected.rotation.z=v;}),
+    tc));
   const act=document.createElement('div'); act.className='grid2';
   act.innerHTML='<button class="btn" id="dupBtn">복제</button><button class="btn danger" id="delBtn">삭제</button>';
   B.appendChild(act);
@@ -1922,8 +1940,8 @@ function bindScene(){
   $('#hourChips').onclick=e=>{const b=e.target.closest('[data-p]'); if(!b)return; S.lmode='time'; S.hour=(hourPreset(b.dataset.p)+24)%24; applyScene(); save();};
   const tg=(id,key)=>$('#'+id).onclick=()=>{S[key]=S[key]?0:1; applyScene(); save();};
   tg('tgGrid','grid'); tg('tgThirds','thirds'); tg('tgMap','map'); tg('tgHud','hud');
-  $('#pipIn').onclick=()=>{S.mapZoom=clamp(S.mapZoom/1.4,3,150);};
-  $('#pipOut').onclick=()=>{S.mapZoom=clamp(S.mapZoom*1.4,3,150);};
+  $('#pipIn').onclick=()=>{S.mapZoom=clamp(S.mapZoom/1.4,0.5,150);};
+  $('#pipOut').onclick=()=>{S.mapZoom=clamp(S.mapZoom*1.4,0.5,150);};
   $('#pipCtr').onclick=()=>{S.mapC=[S.cam.pos[0],S.cam.pos[2]]; S.mapCY=Math.max(1.2,S.cam.pos[1]); save();};
   $('#pipSize').onclick=()=>{S.mapBig=S.mapBig?0:1; layoutOverlay(); save();};
   $('#demoBtn').onclick=()=>{clearObjects(); S.mapC=null; demoScene(); save(); toast('예시 씬');};
@@ -2070,7 +2088,7 @@ const isHumanObj=o=>!!KINDS[o.userData.kind]?.human;
 const MOVERS=['animal','vehicle'];
 function faceDefault(o){ const K=KINDS[o.userData.kind]; return !!(K&&(K.human||MOVERS.includes(K.cat))); }
 function objByUid(u){ return objects.find(o=>o.userData.uid===u); }
-function objSnap(o){ const p=o.userData.params; return {x:+o.position.x.toFixed(4),z:+o.position.z.toFixed(4),r:+o.rotation.y.toFixed(4),pose:p.pose,head:p.head}; }
+function objSnap(o){ const p=o.userData.params; return {x:+o.position.x.toFixed(4),y:+o.position.y.toFixed(4),z:+o.position.z.toFixed(4),r:+o.rotation.y.toFixed(4),tx:+o.rotation.x.toFixed(4),tz:+o.rotation.z.toFixed(4),pose:p.pose,head:p.head}; }
 const camSnapA=()=>{const c=S.cam; return {pos:c.pos.map(v=>+v.toFixed(4)),yaw:+c.yaw.toFixed(5),pitch:+c.pitch.toFixed(5),roll:+c.roll.toFixed(5),focal:c.focal,focus:+c.focus.toFixed(3),t:c.t};};
 const snapEq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const angLerp=(a,b,u)=>{const d=((b-a+Math.PI*3)%(Math.PI*2))-Math.PI; return a+d*u;};
@@ -2095,7 +2113,7 @@ function camAt(t){
 function objAt(keys,t){
   const [i,u0]=kseg(keys,t); const u=easeSeg(keys,i,u0); const a=keys[i], b=keys[i+1]||a;
   const [x,z]=posAt(keys,t,k=>[k.x,k.z]);
-  return {x,z,r:angLerp(a.r,b.r,u),pose:a.pose,head:lerp(a.head||0,b.head||0,u)};
+  return {x,y:lerp(a.y||0,b.y||0,u),z,r:angLerp(a.r,b.r,u),tx:lerp(a.tx||0,b.tx||0,u),tz:lerp(a.tz||0,b.tz||0,u),pose:a.pose,head:lerp(a.head||0,b.head||0,u)};
 }
 function pathLen(keys,t){ let L=0, px=null, pz; const st=.04; for(let tt=0;tt<=t+1e-6;tt+=st){ const [x,z]=posAt(keys,Math.min(tt,t),k=>[k.x,k.z]); if(px!==null) L+=Math.hypot(x-px,z-pz); px=x;pz=z; } return L; }
 let lastApplied={cam:null,obj:{}};
@@ -2104,7 +2122,7 @@ function applyAnim(t){
   const c=camAt(t); if(c){ Object.assign(S.cam,JSON.parse(JSON.stringify(c))); applyCam(); }
   for(const [u,keys] of Object.entries(A.obj)){
     const o=objByUid(u); if(!o||!keys.length) continue;
-    const st=objAt(keys,t); o.position.x=st.x; o.position.z=st.z; if(o.userData.params.pose!==undefined){o.userData.params.pose=st.pose; o.userData.params.head=Math.round(st.head);}
+    const st=objAt(keys,t); o.position.x=st.x; o.position.y=st.y; o.position.z=st.z; o.rotation.x=st.tx; o.rotation.z=st.tz; if(o.userData.params.pose!==undefined){o.userData.params.pose=st.pose; o.userData.params.head=Math.round(st.head);}
     const p0=posAt(keys,Math.max(0,t-.05),k=>[k.x,k.z]), p1=posAt(keys,t+.05,k=>[k.x,k.z]);
     const vx=(p1[0]-p0[0])/.1, vz=(p1[1]-p0[1])/.1, sp=Math.hypot(vx,vz);
     const face=o.userData.params.face??faceDefault(o);
@@ -2187,11 +2205,11 @@ function laneT(clientX){ const lane=$('#tlRows .lane').getBoundingClientRect(); 
 $('#tlBody').addEventListener('pointerdown',e=>{
   if(TL.rec) return;
   const key=e.target.closest('.key'), row=e.target.closest('[data-row]'), lab=e.target.closest('.lab');
-  if(row&&lab){ TL.sel=row.dataset.row; TL.selKey=null; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ select(o); showTab('sel'); }} else showTab('cam'); renderTL(); return; }
+  if(row&&lab){ TL.sel=row.dataset.row; TL.selKey=null; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ select(o); showTab('sel'); }} else { CT='cam'; renderTools(); showTab('cam'); } renderTL(); return; }
   if(TL.playing) tlPlay(false);
   $('#tlBody').setPointerCapture(e.pointerId);
   const rh=e.target.closest('.rh'); if(rh){ TL.drag={type:'rng',h:rh.dataset.h}; return; }
-  if(key){ TL.sel=key.dataset.row; const arr=TL.sel==='cam'?animData().cam:animData().obj[TL.sel]; TL.drag={type:'key',arr,k:arr[+key.dataset.i],x0:e.clientX,moved:false}; TL.selKey={row:TL.sel,t:arr[+key.dataset.i].t}; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ if(o!==selected) select(o); showTab('sel'); }} else showTab('cam'); renderTL(); return; }
+  if(key){ TL.sel=key.dataset.row; const arr=TL.sel==='cam'?animData().cam:animData().obj[TL.sel]; TL.drag={type:'key',arr,k:arr[+key.dataset.i],x0:e.clientX,moved:false}; TL.selKey={row:TL.sel,t:arr[+key.dataset.i].t}; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ if(o!==selected) select(o); showTab('sel'); }} else { CT='cam'; renderTools(); showTab('cam'); } renderTL(); return; }
   TL.selKey=null; TL.drag={type:'scrub'}; tlSetTime(laneT(e.clientX)); renderTL();
 });
 $('#tlBody').addEventListener('pointermove',e=>{

@@ -276,6 +276,7 @@ body.recording .tlbar button.rec{background:var(--red);color:#fff}
 .tlr .rh.out{background:#2b9fd0}
 .tlr .rsh{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.45);pointer-events:none}
 .tlr em{position:absolute;top:50%;height:2px;margin-top:-1px;background:rgba(242,179,61,.35)}
+.tlr em.bz{height:3px;margin-top:-1.5px;background:rgba(61,189,242,.75)}
 #tlHead{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--red);pointer-events:none;z-index:3}
 body.recording #cv{pointer-events:none}
 #recModal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:32}
@@ -662,7 +663,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 let BASE_EV=1.05;
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=BASE_EV;
-const tGain=()=>clamp(Math.pow(2.8/(S.cam.t||2.8),2),.05,16);
+const tGain=()=>clamp(Math.pow(2.8/(S.cam.t||2.8),2),.25,4);
 function applyExposure(){ renderer.toneMappingExposure=BASE_EV*tGain(); }
 renderer.setScissorTest(true);
 
@@ -2078,10 +2079,11 @@ function kseg(keys,t){ // returns [i,u] for interpolation
 }
 function cr(p0,p1,p2,p3,u){ const u2=u*u,u3=u2*u; return .5*((2*p1)+(-p0+p2)*u+(2*p0-5*p1+4*p2-p3)*u2+(-p0+3*p1-3*p2+p3)*u3); }
 const bezT=(a,b,t)=>3*a*(1-t)*(1-t)*t+3*b*(1-t)*t*t+t*t*t;
-function bezEase(u){ // cubic-bezier(.42,0,.58,1) ease-in-out timing
-  let lo=0,hi=1,t=u; for(let n=0;n<30;n++){ const x=bezT(.42,.58,t); if(Math.abs(x-u)<1e-5) break; if(x<u) lo=t; else hi=t; t=(lo+hi)/2; }
-  return bezT(0,1,t); }
-const easeSeg=(keys,i,u)=>(keys[i]&&keys[i].ip==='bez')?bezEase(u):u; // ip on key = segment starting at that key
+const EASES={bez:[.42,0,.58,1],ein:[.42,0,1,1],eout:[0,0,.58,1]};
+function bezEase(u,p=[.42,0,.58,1]){ // cubic-bezier timing
+  let lo=0,hi=1,t=u; for(let n=0;n<30;n++){ const x=bezT(p[0],p[2],t); if(Math.abs(x-u)<1e-5) break; if(x<u) lo=t; else hi=t; t=(lo+hi)/2; }
+  return bezT(p[1],p[3],t); }
+const easeSeg=(keys,i,u)=>{ const e=keys[i]&&keys[i].ip; return EASES[e]?bezEase(u,EASES[e]):u; }; // ip on key = segment starting at that key
 function posAt(keys,t,get){ const [i,u0]=kseg(keys,t); if(u0===0||i>=keys.length-1) return get(keys[i]);
   const u=easeSeg(keys,i,u0), A=get(keys[i]), B=get(keys[i+1]); return A.map((v,j)=>lerp(v,B[j],u)); }
 function camAt(t){
@@ -2146,25 +2148,27 @@ const tc=t=>{const m=Math.floor(t/60), s=t-m*60; return String(m).padStart(2,'0'
 /* UI */
 const TLW=112;
 function tlRows(){
-  const A=animData(), rows=[{id:'cam',name:'카메라',keys:A.cam.map(k=>k.t)}];
+  const A=animData(), rows=[{id:'cam',name:'카메라',keys:A.cam.map(k=>k.t),ips:A.cam.map(k=>k.ip)}];
   const set=new Set(Object.keys(A.obj).filter(u=>A.obj[u].length&&objByUid(u)));
   if(selected) set.add(selected.userData.uid);
-  for(const u of set){ const o=objByUid(u); if(o) rows.push({id:u,name:objName(o),keys:(A.obj[u]||[]).map(k=>k.t)}); }
+  for(const u of set){ const o=objByUid(u); if(o) rows.push({id:u,name:objName(o),keys:(A.obj[u]||[]).map(k=>k.t),ips:(A.obj[u]||[]).map(k=>k.ip)}); }
   return rows;
 }
 const isSelKey=(row,t)=>!!TL.selKey&&TL.selKey.row===row&&Math.abs(TL.selKey.t-t)<.01;
 function keyOfSel(){ const k=TL.selKey; if(!k) return null; const A=animData(); const arr=k.row==='cam'?A.cam:A.obj[k.row]; return (arr||[]).find(x=>Math.abs(x.t-k.t)<.01)||null; }
-function syncIpBtn(){ const b=$('#tlIp'); if(!b) return; const k=keyOfSel(); b.disabled=!k; b.classList.toggle('on',!!k&&k.ip==='bez'); b.textContent=k?(k.ip==='bez'?'보간 베지어':'보간 선형'):'보간'; }
+const IP_ORDER=['lin','bez','ein','eout'], IP_LBL={lin:'선형',bez:'베지어',ein:'이즈인',eout:'이즈아웃'};
+function syncIpBtn(){ const b=$('#tlIp'); if(!b) return; const k=keyOfSel(); b.disabled=!k; const v=k?(k.ip||'lin'):'lin'; b.classList.toggle('on',!!k&&v!=='lin'); b.textContent=k?'보간 '+IP_LBL[v]:'보간'; }
 function renderTL(){
   if(!S.tlOn) return;
   const A=animData(), rows=tlRows(), body=$('#tlRows');
   $('#tlDur').value=String(A.dur);
   [...$('#tlAuto').classList].includes('on')!==!!S.autoKey && $('#tlAuto').classList.toggle('on',!!S.autoKey);
   const ticks=[]; const step=A.dur<=10?1:A.dur<=30?2:5; for(let s=0;s<=A.dur+1e-6;s+=step) ticks.push(s);
+  const segs=r=>r.keys.slice(0,-1).map((t,i)=>`<em class="${r.ips[i]&&r.ips[i]!=='lin'?'bz':''}" style="left:${t/A.dur*100}%;width:${(r.keys[i+1]-t)/A.dur*100}%"></em>`).join('');
   const R=tlRange(), ra=R.a/A.dur*100, rb=R.b/A.dur*100;
   const shade=R.set?`<i class="rsh" style="left:0;width:${ra}%"></i><i class="rsh" style="left:${rb}%;right:0"></i>`:'';
   body.innerHTML=`<div class="tlr ruler"><div class="lab">${R.set?`<span class="rlab">${fmt(R.a,1)}–${fmt(R.b,1)}s</span>`:''}</div><div class="lane">${ticks.map(s=>`<span style="left:${s/A.dur*100}%">${s}s</span>`).join('')}${R.set?`<i class="rng" style="left:${ra}%;width:${rb-ra}%"></i><b class="rh" data-h="in" style="left:${ra}%">IN</b><b class="rh out" data-h="out" style="left:${rb}%">OUT</b>`:''}</div></div>`+
-    rows.map(r=>`<div class="tlr ${TL.sel===r.id?'on':''}" data-row="${r.id}"><div class="lab">${r.id==='cam'?'🎥 ':''}${r.name}</div><div class="lane">${r.keys.map((t,i)=>`<b class="key${isSelKey(r.id,t)?' on':''}" data-row="${r.id}" data-i="${i}" style="left:${t/A.dur*100}%"></b>`).join('')}${r.keys.length>1?`<em style="left:${r.keys[0]/A.dur*100}%;width:${(r.keys[r.keys.length-1]-r.keys[0])/A.dur*100}%"></em>`:''}${shade}</div></div>`).join('');
+    rows.map(r=>`<div class="tlr ${TL.sel===r.id?'on':''}" data-row="${r.id}"><div class="lab">${r.id==='cam'?'🎥 ':''}${r.name}</div><div class="lane">${r.keys.map((t,i)=>`<b class="key${isSelKey(r.id,t)?' on':''}" data-row="${r.id}" data-i="${i}" style="left:${t/A.dur*100}%"></b>`).join('')}${segs(r)}${shade}</div></div>`).join('');
   syncIpBtn();
   renderPlayhead();
 }
@@ -2197,10 +2201,14 @@ $('#tlBody').addEventListener('pointerup',tlUp); $('#tlBody').addEventListener('
 $('#tlPlay').onclick=()=>tlPlay(!TL.playing);
 $('#tlStart').onclick=()=>{ tlPlay(false); tlSetTime(0); snapshotAll(); };
 $('#tlDur').onchange=e=>{ const A=animData(); A.dur=+e.target.value; TL.t=Math.min(TL.t,A.dur); if(A.outT!=null) A.outT=Math.min(A.outT,A.dur); if(A.inT!=null&&A.inT>=A.dur-.1){A.inT=null;A.outT=null;} renderTL(); save(); };
-$('#tlIp').onclick=()=>{ const k=keyOfSel(); if(!k){toast('보간을 바꿀 키를 먼저 선택하세요');return;} k.ip=k.ip==='bez'?'lin':'bez'; applyAnim(TL.t); renderTL(); save(); toast(k.ip==='bez'?'베지어 보간':'선형 보간'); };
+$('#tlIp').onclick=()=>{ const k=keyOfSel(); if(!k){toast('보간을 바꿀 키를 먼저 선택하세요');return;} const cur=IP_ORDER.indexOf(k.ip||'lin'); k.ip=IP_ORDER[(cur+1)%IP_ORDER.length]; applyAnim(TL.t); renderTL(); save(); toast('보간: '+IP_LBL[k.ip]); };
+document.addEventListener('keydown',e=>{ if(!TL.selKey||e.target.closest('input,select,textarea')) return; if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
+  const k=keyOfSel(); if(!k) return; const A=animData(), arr=TL.selKey.row==='cam'?A.cam:A.obj[TL.selKey.row];
+  k.t=clamp(Math.round((k.t+(e.key==='ArrowRight'?.1:-.1))*10)/10,0,A.dur); arr.sort((a,b)=>a.t-b.t); TL.selKey.t=k.t; e.preventDefault(); tlSetTime(TL.t); renderTL(); save(); });
 $('#tlKeyCam').onclick=()=>{ TL.sel='cam'; keyCam(); toast('카메라 키 '+tc(TL.t)); };
 $('#tlKeyObj').onclick=()=>{ if(!selected){toast('오브젝트를 먼저 선택하세요');return;} TL.sel=selected.userData.uid; keyObj(selected); toast(objName(selected)+' 키 '+tc(TL.t)); };
-$('#tlDel').onclick=()=>{ const A=animData(), arr=TL.sel==='cam'?A.cam:A.obj[TL.sel]; if(!arr||!arr.length){toast('지울 키가 없습니다');return;}
+$('#tlDel').onclick=()=>{ const sk=keyOfSel(); if(sk){ const A0=animData(), sa=TL.selKey.row==='cam'?A0.cam:A0.obj[TL.selKey.row]; sa.splice(sa.indexOf(sk),1); TL.selKey=null; renderTL(); tlSetTime(TL.t); snapshotAll(); save(); return; }
+  const A=animData(), arr=TL.sel==='cam'?A.cam:A.obj[TL.sel]; if(!arr||!arr.length){toast('지울 키가 없습니다');return;}
   const i=arr.findIndex(k=>Math.abs(k.t-TL.t)<.06); if(i<0){toast('재생 헤드 위치에 키가 없습니다');return;} arr.splice(i,1); renderTL(); tlSetTime(TL.t); snapshotAll(); save(); };
 $('#tlClear').onclick=()=>{ const A=animData(); const nm=TL.sel==='cam'?'카메라':(objByUid(TL.sel)?objName(objByUid(TL.sel)):''); openConfirm(`'${nm}' 트랙의 키를 모두 지울까요?`,()=>{ if(TL.sel==='cam') A.cam=[]; else delete A.obj[TL.sel]; renderTL(); snapshotAll(); save(); }); };
 $('#tlIn').onclick=()=>{ const A=animData(), R=tlRange(); A.inT=Math.min(Math.round(TL.t*10)/10,R.b-.1); if(A.outT==null) A.outT=A.dur; renderTL(); save(); toast('IN '+tc(A.inT)); };

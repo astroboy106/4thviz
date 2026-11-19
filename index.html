@@ -1345,7 +1345,7 @@ const gizmo=new THREE.Group(); const gizParts={};
   g.add(shaft,tip); g.rotation.set(...rot); g.traverse(o=>{o.renderOrder=999;}); gizmo.add(g); gizParts[k]={m};
 });
 gizmo.visible=false; scene.add(gizmo);
-const GIZ_ACTIVE={select:'xyz',pantilt:'xy',dolly:'xz',boom:'y',orbit:'y',roll:'z'};
+const GIZ_ACTIVE={select:'xyz',rot:'xyz',pantilt:'xy',dolly:'xz',boom:'y',orbit:'y',roll:'z'};
 function updateGizmo(){
   if(!selected||CT!=='obj'||hideForCapture){ gizmo.visible=false; return; }
   const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3());
@@ -1367,7 +1367,7 @@ function makeGiz(layer){ const g=new THREE.Group(), parts={};
 function makeRingGiz(layer){ const g=new THREE.Group(), parts={};
   [['x',0xff4d4d,[0,Math.PI/2,0]],['y',0x4dff6a,[Math.PI/2,0,0]],['z',0x4da6ff,[0,0,0]]].forEach(([k,c,rot])=>{
     const m=new THREE.MeshBasicMaterial({color:c,depthTest:false,transparent:true,opacity:1});
-    const ring=new THREE.Mesh(new THREE.TorusGeometry(1,.035,8,72),m); ring.rotation.set(...rot); g.add(ring); parts[k]={m};
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(1,.035,8,72),m); ring.rotation.set(...rot); const ax=new THREE.Group(); const sh=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,1,8),m); sh.position.y=.5; const tp=new THREE.Mesh(new THREE.ConeGeometry(.08,.2,14),m); tp.position.y=1.1; ax.add(sh,tp); ax.rotation.set(...({x:[0,0,-Math.PI/2],y:[0,0,0],z:[Math.PI/2,0,0]})[k]); g.add(ring,ax); parts[k]={m,ring,ax};
   });
   g.traverse(o=>{o.layers.set(layer); o.renderOrder=999;}); scene.add(g); return {g,parts};
 }
@@ -1376,6 +1376,8 @@ gizObjMap.g.visible=false; gizCamMap.g.visible=false;
 const setActiveAxes=(parts,act)=>{ for(const k of ['x','y','z']) parts[k].m.opacity=act.includes(k)?1:.3; };
 function updateMapGizmos(){
   gizObjMap.g.visible=false; gizCamMap.g.visible=false;
+  const RINGS=S.mode==='rot';
+  for(const G of [gizObjMap,gizCamMap]) for(const k of ['x','y','z']){ G.parts[k].ring.visible=RINGS; G.parts[k].ax.visible=!RINGS; }
   if(!S.map||hideForCapture) return;
   const L=S.mapZoom*.12;
   if(selected){ const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3());
@@ -1391,7 +1393,7 @@ function ringPts(c,q,k,R){ const [u,v]=RING_UV[k].map(a=>new THREE.Vector3(...a)
   for(let i=0;i<=48;i++){ const t=i/48*Math.PI*2; out.push(pipProj(c.clone().addScaledVector(u,Math.cos(t)*R).addScaledVector(v,Math.sin(t)*R))); } return out; }
 function ringHit(x,y,pts){ for(let i=0;i<pts.length-1;i++) if(distToSeg(x,y,pts[i],pts[i+1])<10) return true; return false; }
 function rotHandle(x,y){
-  if(!S.map) return null;
+  if(!S.map||S.mode!=='rot') return null;
   const R=S.mapZoom*.13;
   if(selected){ const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3()), q=new THREE.Quaternion();
     for(const k of ['x','y','z']) if(ringHit(x,y,ringPts(c,q,k,R))) return 'aRot'+k.toUpperCase(); }
@@ -1672,7 +1674,7 @@ canvas.addEventListener('pointermove',e=>{
   if(gest.type==='one'){
     if(gest.pip){ pipDrag(gest,dx,dy,p); return; }
     if(gest.drag){ const gp=groundHit(p.x,p.y); if(gp){gest.drag.position.set(gp.x+gest.off.x,0,gp.z+gest.off.z); updatePosReadout();} return; }
-    const m=S.mode==='select'?'pantilt':S.mode;
+    const m=(S.mode==='select'||S.mode==='rot')?'pantilt':S.mode;
     if(CT==='obj'&&selected){ objGesture(m,dx,dy,k,inv); updatePosReadout(); renderSelRot(); return; }
     if(m==='pantilt'){ c.yaw-=dx*k*inv; c.pitch-=dy*k*inv; }
     else if(m==='dolly'){ const f=fwdFlat(), r=rightFlat(); const s=.02*sp*inv;
@@ -1777,6 +1779,7 @@ const TOOLS=[
  ['boom','붐(높이)','<path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/>'],
  ['orbit','오빗','<ellipse cx="12" cy="12" rx="9" ry="4"/><circle cx="12" cy="12" r="2"/>'],
  ['roll','롤(더치)','<path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5M18 3v4h-4M6 21v-4h4"/>'],
+ ['rot','회전','<circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="8" ry="3" transform="rotate(35 12 12)"/>'],
 ];
 function renderTools(){ $('#tools').innerHTML=TOOLS.map(([id,n,ic])=>`<button data-m="${id}" class="${(id==='cam'?CT==='cam':S.mode===id)?'on':''}"><svg viewBox="0 0 24 24">${ic}</svg>${n}</button>`).join(''); }
 $('#tools').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;

@@ -76,7 +76,12 @@
   document.addEventListener('DOMContentLoaded',function(){
     var pb=document.getElementById('projBtn'); if(pb){ var b=document.createElement('button'); b.className='tbtn'; b.textContent='설정'; b.onclick=window.__4vSettings; pb.after(b); }
   });
-  if('serviceWorker' in navigator) window.addEventListener('load',function(){ navigator.serviceWorker.register('./sw.js').catch(function(){}); });
+  if('serviceWorker' in navigator) window.addEventListener('load',function(){
+    var had=!!navigator.serviceWorker.controller, reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',function(){ if(had&&!reloaded){ reloaded=true; location.reload(); } });
+    navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(function(r){ r.update(); }).catch(function(){});
+    document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') navigator.serviceWorker.getRegistration().then(function(r){ r&&r.update(); }); });
+  });
 })();
 </script>
 

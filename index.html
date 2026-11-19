@@ -755,7 +755,11 @@ function buildHuman(p){
   const thighL=(hipH-footH)/2, shinL=thighL;
   const neckL=.045*H*(age<18?.8:1);
   const torsoL=H-hipH-neckL-headH;
-  const g=.85+.15*b;
+  // 체형 계수: 큰 쪽(>1)은 팔다리·얼굴·목·배를 키우고, 마른 쪽(<1)은 극단적으로 줄임
+  const fat=clamp((b-1)/.5,0,1), thin=clamp((1-b)/.3,0,1);
+  const limbK=b>=1?1+.6*fat:1-.55*thin, bodyK=b>=1?1+.25*fat:1-.25*thin, depthK=b>=1?1+.9*fat:1-.4*thin;
+  const neckK=b>=1?1+.35*fat:1-.3*thin, faceK=b>=1?1+.22*fat:1-.18*thin;
+  const g=bodyK;
   const shW=(fem?.225:.25)*H*(age<18?lerp(.9,1,kid):1)*g;
   const hpW=(fem?.2:.175)*H*g;
   const skin=mat(SKINS[p.skin||0]), shirt=mat(p.shirt), pants=mat(p.pants), shoe=mat('#1d1d1f'), dark=mat('#111');
@@ -765,21 +769,28 @@ function buildHuman(p){
   const pelvis=new THREE.Group(); pelvis.position.y=hipH; root.add(pelvis); J.pelvis=pelvis;
   const pm=mesh(new THREE.SphereGeometry(1,20,14),pants); pm.scale.set(hpW/2,.065*H,hpW/2*.72); pelvis.add(pm);
   const spine=new THREE.Group(); pelvis.add(spine); J.spine=spine;
-  const tm=mesh(new THREE.CylinderGeometry(shW/2*.82,hpW/2*.95,torsoL,20),shirt,0,torsoL/2,0); tm.scale.z=.62*Math.sqrt(b); spine.add(tm);
-  const sh=mesh(new THREE.SphereGeometry(1,20,12),shirt,0,torsoL*.93,0); sh.scale.set(shW/2*.86,.05*H,shW/2*.86*.62*Math.sqrt(b)); spine.add(sh);
-  if(b>1.15){const bl=mesh(new THREE.SphereGeometry(1,20,14),shirt,0,torsoL*.35,.02*H*b); bl.scale.set(hpW/2*b*.9,torsoL*.32,hpW/2*b*.75); spine.add(bl);}
-  if(fem&&age>=13){for(const s of[-1,1]){const bs=mesh(new THREE.SphereGeometry(.036*H*g,14,10),shirt,s*shW*.17,torsoL*.72,shW/2*.62*.62*Math.sqrt(b)*.8); spine.add(bs);}}
+  const tm=mesh(new THREE.CylinderGeometry(shW/2*.82,hpW/2*.95,torsoL,20),shirt,0,torsoL/2,0); tm.scale.z=.62*depthK; spine.add(tm);
+  const sh=mesh(new THREE.SphereGeometry(1,20,12),shirt,0,torsoL*.93,0); sh.scale.set(shW/2*.86,.05*H,shW/2*.86*.62*depthK); spine.add(sh);
+  if(fat>.05){ // 배: 큰 체형일수록 앞으로 크게 나오고 아래로 처짐
+    const bz=.035*H*fat;
+    const pn=mesh(new THREE.SphereGeometry(1,24,18),shirt,0,torsoL*.32,bz); pn.scale.set(hpW/2*(1+.5*fat),torsoL*(.4+.2*fat),hpW/2*(.55+.75*fat)); spine.add(pn);
+    const low=mesh(new THREE.SphereGeometry(1,24,18),shirt,0,torsoL*.05,bz*1.2); low.scale.set(hpW/2*(1.02+.35*fat),torsoL*(.22+.12*fat),hpW/2*(.5+.6*fat)); spine.add(low);
+    if(fat>.3) for(const s2 of[-1,1]){ const lh=mesh(new THREE.SphereGeometry(1,16,12),shirt,s2*shW*.5,torsoL*.4,0); lh.scale.set(.05*H*fat+.01*H,torsoL*.18,hpW*.22*fat+.01*H); spine.add(lh); }
+  }
+  if(fem&&age>=13){for(const s of[-1,1]){const bs=mesh(new THREE.SphereGeometry(.036*H*g,14,10),shirt,s*shW*.17,torsoL*.72,shW/2*.62*.62*depthK*.8); spine.add(bs);}}
   const neck=new THREE.Group(); neck.position.y=torsoL; spine.add(neck); J.neck=neck;
-  neck.add(mesh(new THREE.CylinderGeometry(.028*H,.032*H,neckL*1.4,12),skin,0,neckL/2,0));
+  neck.add(mesh(new THREE.CylinderGeometry(.028*H*neckK,.032*H*neckK,neckL*1.4,12),skin,0,neckL/2,0));
   const head=new THREE.Group(); head.position.y=neckL; neck.add(head); J.head=head;
   const r=headH/2;
-  const hm=mesh(new THREE.SphereGeometry(r,24,18),skin,0,r,0); hm.scale.set(.8,1,.92); head.add(hm);
+  const hm=mesh(new THREE.SphereGeometry(r,24,18),skin,0,r,0); hm.scale.set(.8*faceK,1,.92); head.add(hm);
+  if(fat>.1) for(const s2 of[-1,1]) head.add(mesh(new THREE.SphereGeometry(r*.42*fat,14,10),skin,s2*r*.5*faceK,-r*.2,r*.25)); // 볼살
+  if(fat>.3) head.add(mesh(new THREE.SphereGeometry(r*.36*fat,14,10),skin,0,r*.15,r*.5)); // 이중턱
   const nose=mesh(new THREE.ConeGeometry(r*.12,r*.3,8),skin,0,r*.92,r*.9); nose.rotation.x=Math.PI/2; head.add(nose);
   for(const s of[-1,1]) head.add(mesh(new THREE.SphereGeometry(r*.07,8,6),dark,s*r*.3,r*1.1,r*.8));
-  const cap=mesh(new THREE.SphereGeometry(r*1.05,24,14,0,Math.PI*2,0,Math.PI*.52),hair,0,r*1.02,-r*.04); cap.scale.set(.83,1,.95); cap.rotation.x=-.3; head.add(cap);
+  const cap=mesh(new THREE.SphereGeometry(r*1.05,24,14,0,Math.PI*2,0,Math.PI*.52),hair,0,r*1.02,-r*.04); cap.scale.set(.83*faceK,1,.95); cap.rotation.x=-.3; head.add(cap);
   if(fem){const lh=mesh(new THREE.CapsuleGeometry(r*.72,headH*.75,6,14),hair,0,r*.45,-r*.42); lh.scale.z=.55; head.add(lh);}
 
-  const uaL=.175*H, faL=.15*H, armR=.03*H*Math.sqrt(b);
+  const uaL=.175*H, faL=.15*H, armR=.03*H*limbK;
   for(const s of[1,-1]){ // 1 = left (+x)
     const k=s>0?'l':'r';
     const ua=new THREE.Group(); ua.position.set(s*(shW/2-armR*.9),torsoL*.92,0); spine.add(ua); J[k+'UA']=ua;
@@ -787,7 +798,7 @@ function buildHuman(p){
     const fa=new THREE.Group(); fa.position.y=-uaL; ua.add(fa); J[k+'FA']=fa;
     fa.add(mesh(new THREE.CapsuleGeometry(armR*.82,faL-armR*1.6,6,12),skin,0,-faL/2,0));
     const hd=mesh(new THREE.SphereGeometry(.032*H,12,10),skin,0,-faL-.02*H,0); hd.scale.set(.7,1.1,1); fa.add(hd);
-    const legR=(fem?.046:.042)*H*Math.sqrt(b);
+    const legR=(fem?.046:.042)*H*limbK;
     const th=new THREE.Group(); th.position.set(s*(hpW/2-legR*.95),0,0); pelvis.add(th); J[k+'Th']=th;
     th.add(mesh(new THREE.CapsuleGeometry(legR,thighL-legR,6,12),pants,0,-thighL/2,0));
     const sn=new THREE.Group(); sn.position.y=-thighL; th.add(sn); J[k+'Sh']=sn;

@@ -1,5 +1,5 @@
 /* 4thviz offline cache. Bump VERSION on every release. */
-const VERSION='4thviz-v14';
+const VERSION='4thviz-v15';
 const SHELL=['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png','./apple-touch-icon.png'];
 const CDN='https://cdn.jsdelivr.net/npm/three@0.160.0/';
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(VERSION).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())); });

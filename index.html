@@ -515,7 +515,7 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
       <div class="tlbar">
         <button id="tlStart" title="처음으로">⏮</button><button id="tlPlay" class="pl">▶</button><span id="tlTime">00:00.0</span>
         <select id="tlDur"><option value="5">5초</option><option value="10">10초</option><option value="15">15초</option><option value="20">20초</option><option value="30">30초</option><option value="45">45초</option><option value="60">60초</option><option value="90">90초</option><option value="120">120초</option></select>
-        <i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">키 삭제</button><button id="tlIp" disabled>보간</button><button id="tlClear">트랙 비우기</button><button id="tlAuto">자동 키</button>
+        <select id="tlFps" title="프레임레이트"><option value="24">24fps</option><option value="25">25fps</option><option value="30">30fps</option><option value="60">60fps</option></select><i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">키 삭제</button><button id="tlIp" disabled>보간</button><button id="tlClear">트랙 비우기</button><button id="tlAuto">자동 키</button>
         <i></i><button id="tlIn">IN</button><button id="tlOut">OUT</button><button id="tlRngX">구간 해제</button><button id="tlLoop">반복</button>
         <i></i><button id="tlRec" class="rec">● 녹화</button>
       </div>
@@ -2064,6 +2064,7 @@ function syncEnvBar(){
 
 /* ================= TIMELINE / KEYFRAME ANIMATION ================= */
 const TL={t:0,playing:false,rec:null,sel:'cam',drag:null};
+const FPS=()=>S.fps||24;
 function animData(){ if(!S.anim) S.anim={dur:10,cam:[],obj:{}}; return S.anim; }
 const isHumanObj=o=>!!KINDS[o.userData.kind]?.human;
 const MOVERS=['animal','vehicle'];
@@ -2117,7 +2118,7 @@ function applyAnim(t){
   lastApplied.cam=camSnapA();
   if(selBox) selBox.update();
 }
-function upsertKey(arr,t,data){ const i=arr.findIndex(k=>Math.abs(k.t-t)<.02); if(i>=0) Object.assign(arr[i],data); else { arr.push(Object.assign({t},data)); arr.sort((a,b)=>a.t-b.t); } }
+function upsertKey(arr,t,data){ const i=arr.findIndex(k=>Math.abs(k.t-t)<.5/FPS()); if(i>=0) Object.assign(arr[i],data); else { arr.push(Object.assign({t},data)); arr.sort((a,b)=>a.t-b.t); } }
 function keyCam(){ const A=animData(), s=camSnapA(); if(!A.cam.length&&TL.t>.02&&lastApplied.cam) A.cam.push({t:0,s:lastApplied.cam}); upsertKey(A.cam,TL.t,{s}); lastApplied.cam=s; renderTL(); save(); }
 function keyObj(o){ if(!o) return; const A=animData(), u=o.userData.uid, s=objSnap(o); A.obj[u]=A.obj[u]||[];
   if(!A.obj[u].length&&TL.t>.02&&lastApplied.obj[u]) A.obj[u].push(Object.assign({t:0},lastApplied.obj[u]));
@@ -2138,6 +2139,9 @@ function tlRange(){ const A=animData(), a=clamp(A.inT??0,0,A.dur), b=clamp(A.out
 function tlPlay(on){ TL.playing=on; const R=tlRange(); if(on&&(TL.t<R.a-.01||TL.t>=R.b-.01)) TL.t=R.a; $('#tlPlay').textContent=on?'❚❚':'▶'; $('#fbPlay').textContent=on?'❚❚ 정지':'▶ 재생'; if(!on&&!TL.rec) snapshotAll(); }
 function tickTL(dt){
   if(!TL.playing) return;
+  if(TL.rec){ const R=TL.rec; if(performance.now()-R.last<1000/FPS()-2) return; const t=R.a+R.n/FPS();
+    if(t>R.b+1e-6){ finishRec(); tlPlay(false); return; }
+    R.due=true; TL.t=t; applyAnim(t); renderPlayhead(); return; }
   TL.t+=dt; const R=tlRange(), D=R.b;
   if(TL.t>=D){ if(S.tlLoop&&!TL.rec){ TL.t=R.a+(TL.t-D)%Math.max(.1,D-R.a); applyAnim(TL.t); renderPlayhead(); return; }
     TL.t=D; applyAnim(D); renderPlayhead(); if(TL.rec) finishRec(); tlPlay(false); return; }
@@ -2161,7 +2165,7 @@ function syncIpBtn(){ const b=$('#tlIp'); if(!b) return; const k=keyOfSel(); b.d
 function renderTL(){
   if(!S.tlOn) return;
   const A=animData(), rows=tlRows(), body=$('#tlRows');
-  $('#tlDur').value=String(A.dur);
+  $('#tlDur').value=String(A.dur); $('#tlFps').value=String(FPS());
   [...$('#tlAuto').classList].includes('on')!==!!S.autoKey && $('#tlAuto').classList.toggle('on',!!S.autoKey);
   const ticks=[]; const step=A.dur<=10?1:A.dur<=30?2:5; for(let s=0;s<=A.dur+1e-6;s+=step) ticks.push(s);
   const segs=r=>r.keys.slice(0,-1).map((t,i)=>`<em class="${r.ips[i]&&r.ips[i]!=='lin'?'bz':''}" style="left:${t/A.dur*100}%;width:${(r.keys[i+1]-t)/A.dur*100}%"></em>`).join('');
@@ -2173,13 +2177,13 @@ function renderTL(){
   renderPlayhead();
 }
 function renderPlayhead(){
-  const A=animData(); $('#tlTime').textContent=tc(TL.t)+' / '+tc(A.dur);
+  const A=animData(); $('#tlTime').textContent=tc(TL.t)+' / '+tc(A.dur)+' · F'+(Math.round(TL.t*FPS())+1);
   const lane=$('#tlRows .lane'); if(!lane) return;
   const bx=$('#tlBody').getBoundingClientRect(), lx=lane.getBoundingClientRect();
   $('#tlHead').style.left=(lx.left-bx.left+TL.t/A.dur*lx.width)+'px';
   if(TL.rec||TL.playing) { $('#rec').style.display='block'; $('#rec').textContent=(TL.rec?'● REC ':'▶ ')+tc(TL.t); } else if(!play) $('#rec').style.display='none';
 }
-function laneT(clientX){ const lane=$('#tlRows .lane').getBoundingClientRect(); return clamp((clientX-lane.left)/lane.width,0,1)*animData().dur; }
+function laneT(clientX){ const lane=$('#tlRows .lane').getBoundingClientRect(); const t=clamp((clientX-lane.left)/lane.width,0,1)*animData().dur; return Math.round(t*FPS())/FPS(); }
 $('#tlBody').addEventListener('pointerdown',e=>{
   if(TL.rec) return;
   const key=e.target.closest('.key'), row=e.target.closest('[data-row]'), lab=e.target.closest('.lab');
@@ -2193,8 +2197,8 @@ $('#tlBody').addEventListener('pointerdown',e=>{
 $('#tlBody').addEventListener('pointermove',e=>{
   const d=TL.drag; if(!d) return;
   if(d.type==='scrub') tlSetTime(laneT(e.clientX));
-  else if(d.type==='rng'){ const A=animData(), t=Math.round(laneT(e.clientX)*10)/10, R=tlRange(); if(d.h==='in'){ A.inT=Math.min(t,R.b-.1); if(A.outT==null) A.outT=A.dur; } else { A.outT=Math.max(t,R.a+.1); if(A.inT==null) A.inT=0; } renderTL(); }
-  else { if(Math.abs(e.clientX-d.x0)>4) d.moved=true; if(d.moved){ d.k.t=Math.round(laneT(e.clientX)*10)/10; d.arr.sort((a,b)=>a.t-b.t); renderTL(); } }
+  else if(d.type==='rng'){ const A=animData(), t=laneT(e.clientX), R=tlRange(); if(d.h==='in'){ A.inT=Math.min(t,R.b-.1); if(A.outT==null) A.outT=A.dur; } else { A.outT=Math.max(t,R.a+.1); if(A.inT==null) A.inT=0; } renderTL(); }
+  else { if(Math.abs(e.clientX-d.x0)>4) d.moved=true; if(d.moved){ d.k.t=laneT(e.clientX); d.arr.sort((a,b)=>a.t-b.t); renderTL(); } }
 });
 const tlUp=()=>{ const d=TL.drag; TL.drag=null; if(!d) return; if(d.type==='rng'){ save(); return; } if(d.type==='key'){ if(!d.moved) tlSetTime(d.k.t); else { tlSetTime(TL.t); save(); } renderTL(); } else snapshotAll(); };
 $('#tlBody').addEventListener('pointerup',tlUp); $('#tlBody').addEventListener('pointercancel',tlUp);
@@ -2204,16 +2208,17 @@ $('#tlDur').onchange=e=>{ const A=animData(); A.dur=+e.target.value; TL.t=Math.m
 $('#tlIp').onclick=()=>{ const k=keyOfSel(); if(!k){toast('보간을 바꿀 키를 먼저 선택하세요');return;} const cur=IP_ORDER.indexOf(k.ip||'lin'); k.ip=IP_ORDER[(cur+1)%IP_ORDER.length]; applyAnim(TL.t); renderTL(); save(); toast('보간: '+IP_LBL[k.ip]); };
 document.addEventListener('keydown',e=>{ if(!TL.selKey||e.target.closest('input,select,textarea')) return; if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
   const k=keyOfSel(); if(!k) return; const A=animData(), arr=TL.selKey.row==='cam'?A.cam:A.obj[TL.selKey.row];
-  k.t=clamp(Math.round((k.t+(e.key==='ArrowRight'?.1:-.1))*10)/10,0,A.dur); arr.sort((a,b)=>a.t-b.t); TL.selKey.t=k.t; e.preventDefault(); tlSetTime(TL.t); renderTL(); save(); });
+  k.t=clamp(Math.round((k.t+(e.key==='ArrowRight'?1:-1)/FPS())*FPS())/FPS(),0,A.dur); arr.sort((a,b)=>a.t-b.t); TL.selKey.t=k.t; e.preventDefault(); tlSetTime(TL.t); renderTL(); save(); });
 $('#tlKeyCam').onclick=()=>{ TL.sel='cam'; keyCam(); toast('카메라 키 '+tc(TL.t)); };
 $('#tlKeyObj').onclick=()=>{ if(!selected){toast('오브젝트를 먼저 선택하세요');return;} TL.sel=selected.userData.uid; keyObj(selected); toast(objName(selected)+' 키 '+tc(TL.t)); };
 $('#tlDel').onclick=()=>{ const sk=keyOfSel(); if(sk){ const A0=animData(), sa=TL.selKey.row==='cam'?A0.cam:A0.obj[TL.selKey.row]; sa.splice(sa.indexOf(sk),1); TL.selKey=null; renderTL(); tlSetTime(TL.t); snapshotAll(); save(); return; }
   const A=animData(), arr=TL.sel==='cam'?A.cam:A.obj[TL.sel]; if(!arr||!arr.length){toast('지울 키가 없습니다');return;}
-  const i=arr.findIndex(k=>Math.abs(k.t-TL.t)<.06); if(i<0){toast('재생 헤드 위치에 키가 없습니다');return;} arr.splice(i,1); renderTL(); tlSetTime(TL.t); snapshotAll(); save(); };
+  const i=arr.findIndex(k=>Math.abs(k.t-TL.t)<.5/FPS()); if(i<0){toast('재생 헤드 위치에 키가 없습니다');return;} arr.splice(i,1); renderTL(); tlSetTime(TL.t); snapshotAll(); save(); };
 $('#tlClear').onclick=()=>{ const A=animData(); const nm=TL.sel==='cam'?'카메라':(objByUid(TL.sel)?objName(objByUid(TL.sel)):''); openConfirm(`'${nm}' 트랙의 키를 모두 지울까요?`,()=>{ if(TL.sel==='cam') A.cam=[]; else delete A.obj[TL.sel]; renderTL(); snapshotAll(); save(); }); };
 $('#tlIn').onclick=()=>{ const A=animData(), R=tlRange(); A.inT=Math.min(Math.round(TL.t*10)/10,R.b-.1); if(A.outT==null) A.outT=A.dur; renderTL(); save(); toast('IN '+tc(A.inT)); };
 $('#tlOut').onclick=()=>{ const A=animData(), R=tlRange(); A.outT=Math.max(Math.round(TL.t*10)/10,R.a+.1); if(A.inT==null) A.inT=0; renderTL(); save(); toast('OUT '+tc(A.outT)); };
 $('#tlRngX').onclick=()=>{ const A=animData(); A.inT=null; A.outT=null; renderTL(); save(); };
+$('#tlFps').onchange=e=>{ S.fps=+e.target.value; const A=animData(); [A.cam,...Object.values(A.obj)].forEach(arr=>arr.forEach(k=>{k.t=Math.round(k.t*FPS())/FPS();})); renderTL(); save(); };
 $('#tlLoop').onclick=()=>{ S.tlLoop=S.tlLoop?0:1; $('#tlLoop').classList.toggle('on',!!S.tlLoop); save(); };
 document.addEventListener('keydown',e=>{ if(!S.tlOn||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.metaKey||e.ctrlKey||$('#sketch').style.display==='flex') return; const k=e.key.toLowerCase(); if(k==='i') $('#tlIn').click(); else if(k==='o') $('#tlOut').click(); else if(k===' '){ e.preventDefault(); tlPlay(!TL.playing); } });
 $('#tlAuto').onclick=()=>{ S.autoKey=S.autoKey?0:1; $('#tlAuto').classList.toggle('on',!!S.autoKey); snapshotAll(); save(); };
@@ -2228,14 +2233,14 @@ function startRec(){
   const mime=recMime(); if(!mime||!HTMLCanvasElement.prototype.captureStream){ toast('이 브라우저는 영상 녹화를 지원하지 않습니다',3000); return; }
   const fr=frameRect(), dpr=renderer.getPixelRatio(); let W=Math.round(fr.w*dpr), H=Math.round(fr.h*dpr); const k=Math.min(1,1920/W); W=Math.round(W*k/2)*2; H=Math.round(H*k/2)*2;
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const ctx=rc.getContext('2d'); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
-  const stream=rc.captureStream(30); const chunks=[];
+  const stream=rc.captureStream(FPS()); const chunks=[];
   const mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:16e6});
   mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
-  TL.rec={mr,ctx,rc,W,H,chunks,mime,stream};
+  TL.rec={mr,ctx,rc,W,H,chunks,mime,stream,n:0,last:0,due:false,a:tlRange().a,b:tlRange().b};
   hideForCapture=true; tlPlay(false); TL.t=tlRange().a; applyAnim(TL.t); mr.start(200); tlPlay(true);
   document.body.classList.add('recording');
 }
-function recFrame(){ const R=TL.rec; if(!R) return; const fr=frameRect(), dpr=renderer.getPixelRatio(); R.ctx.drawImage(canvas,fr.x*dpr,fr.y*dpr,fr.w*dpr,fr.h*dpr,0,0,R.W,R.H); const tr=R.stream.getVideoTracks()[0]; tr&&tr.requestFrame&&tr.requestFrame(); }
+function recFrame(){ const R=TL.rec; if(!R||!R.due) return; R.due=false; const fr=frameRect(), dpr=renderer.getPixelRatio(); R.ctx.drawImage(canvas,fr.x*dpr,fr.y*dpr,fr.w*dpr,fr.h*dpr,0,0,R.W,R.H); const tr=R.stream.getVideoTracks()[0]; tr&&tr.requestFrame&&tr.requestFrame(); R.n++; R.last=performance.now(); }
 function finishRec(){
   const R=TL.rec; if(!R) return; TL.rec=null; hideForCapture=false; document.body.classList.remove('recording');
   R.mr.onstop=()=>{ R.stream.getTracks().forEach(t=>t.stop()); const ext=R.mime.includes('mp4')?'mp4':'webm'; const blob=new Blob(R.chunks,{type:R.mime.split(';')[0]}); showRecResult(blob,ext); };
@@ -2244,7 +2249,7 @@ function finishRec(){
 let recBlob=null, recExt='mp4';
 function showRecResult(blob,ext){
   recBlob=blob; recExt=ext; const v=$('#recVideo'); try{ if(v.src) URL.revokeObjectURL(v.src);}catch(e){} v.src=URL.createObjectURL(blob);
-  const RR=tlRange(); $('#recInfo').textContent=`${tc(RR.b-RR.a)}${RR.set?' (구간 '+tc(RR.a)+'–'+tc(RR.b)+')':''} · ${(blob.size/1048576).toFixed(1)}MB · ${ext.toUpperCase()}`;
+  const RR=tlRange(); $('#recInfo').textContent=`${tc(RR.b-RR.a)}${RR.set?' (구간 '+tc(RR.a)+'–'+tc(RR.b)+')':''} · ${(blob.size/1048576).toFixed(1)}MB · ${ext.toUpperCase()} · ${FPS()}fps`;
   $('#recModal').style.display='flex';
 }
 $('#tlRec').onclick=()=>{ if(TL.rec){ finishRec(); tlPlay(false); } else startRec(); };

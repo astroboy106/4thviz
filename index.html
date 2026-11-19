@@ -1364,7 +1364,14 @@ function makeGiz(layer){ const g=new THREE.Group(), parts={};
   });
   g.traverse(o=>{o.layers.set(layer); o.renderOrder=999;}); scene.add(g); return {g,parts};
 }
-const gizObjMap=makeGiz(1), gizCamMap=makeGiz(1);
+function makeRingGiz(layer){ const g=new THREE.Group(), parts={};
+  [['x',0xff4d4d,[0,Math.PI/2,0]],['y',0x4dff6a,[Math.PI/2,0,0]],['z',0x4da6ff,[0,0,0]]].forEach(([k,c,rot])=>{
+    const m=new THREE.MeshBasicMaterial({color:c,depthTest:false,transparent:true,opacity:1});
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(1,.035,8,72),m); ring.rotation.set(...rot); g.add(ring); parts[k]={m};
+  });
+  g.traverse(o=>{o.layers.set(layer); o.renderOrder=999;}); scene.add(g); return {g,parts};
+}
+const gizObjMap=makeRingGiz(1), gizCamMap=makeRingGiz(1);
 gizObjMap.g.visible=false; gizCamMap.g.visible=false;
 const setActiveAxes=(parts,act)=>{ for(const k of ['x','y','z']) parts[k].m.opacity=act.includes(k)?1:.3; };
 function updateMapGizmos(){
@@ -1377,16 +1384,20 @@ function updateMapGizmos(){
   gizCamMap.g.visible=true; gizCamMap.g.position.fromArray(S.cam.pos); gizCamMap.g.rotation.copy(shotCam.rotation); gizCamMap.g.scale.setScalar(L);
   setActiveAxes(gizCamMap.parts,'xyz');
 }
-// camera rotation handles: pick a camera axis near its tip in the map overlay
+// ring handles: pick a ring near its drawn circle in the map overlay
+const RING_UV={x:[[0,1,0],[0,0,1]],y:[[1,0,0],[0,0,1]],z:[[1,0,0],[0,1,0]]};
 function distToSeg(px,py,a,b){ const vx=b.x-a.x, vy=b.y-a.y, L2=vx*vx+vy*vy||1; const t=clamp(((px-a.x)*vx+(py-a.y)*vy)/L2,0,1); return Math.hypot(px-(a.x+vx*t),py-(a.y+vy*t)); }
+function ringPts(c,q,k,R){ const [u,v]=RING_UV[k].map(a=>new THREE.Vector3(...a).applyQuaternion(q)); const out=[];
+  for(let i=0;i<=48;i++){ const t=i/48*Math.PI*2; out.push(pipProj(c.clone().addScaledVector(u,Math.cos(t)*R).addScaledVector(v,Math.sin(t)*R))); } return out; }
+function ringHit(x,y,pts){ for(let i=0;i<pts.length-1;i++) if(distToSeg(x,y,pts[i],pts[i+1])<10) return true; return false; }
 function rotHandle(x,y){
   if(!S.map) return null;
-  const cpos=new THREE.Vector3().fromArray(S.cam.pos), L=S.mapZoom*.13, c0=pipProj(cpos);
+  const R=S.mapZoom*.13;
+  if(selected){ const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3()), q=new THREE.Quaternion();
+    for(const k of ['x','y','z']) if(ringHit(x,y,ringPts(c,q,k,R))) return 'aRot'+k.toUpperCase(); }
+  const cpos=new THREE.Vector3().fromArray(S.cam.pos), c0=pipProj(cpos);
   if(Math.hypot(x-c0.x,y-c0.y)<=12) return null;
-  for(const [k,ax] of [['rotX',[1,0,0]],['rotY',[0,1,0]],['rotZ',[0,0,1]]]){
-    const dir=new THREE.Vector3(...ax).applyQuaternion(shotCam.quaternion), ep=pipProj(cpos.clone().addScaledVector(dir,L));
-    if(distToSeg(x,y,c0,ep)<12) return k;
-  }
+  for(const k of ['x','y','z']) if(ringHit(x,y,ringPts(cpos,shotCam.quaternion,k,R))) return 'rot'+k.toUpperCase();
   return null;
 }
 /* selection box */
@@ -1731,9 +1742,15 @@ function pipPick(x,y){
   return null;
 }
 function pipDrag(g,dx,dy,p){
-  if(typeof g.pipObj==='string'&&g.pipObj.startsWith('rot')){ const c=S.cam;
-    if(g.pipObj==='rotX') c.pitch=clamp(c.pitch-dy*.008,-89.9*D2R,89.9*D2R); else if(g.pipObj==='rotY') c.yaw-=dx*.008; else c.roll-=dx*.008;
-    applyCam(); return; }
+  if(typeof g.pipObj==='string'&&/^(aRot|rot)/.test(g.pipObj)){
+    const isA=g.pipObj.startsWith('aRot'), cen=isA?new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3()):new THREE.Vector3().fromArray(S.cam.pos);
+    const c0=pipProj(cen), a1=Math.atan2(p.y-c0.y,p.x-c0.x), a0=Math.atan2(p.y-dy-c0.y,p.x-dx-c0.x);
+    let d=a1-a0; if(d>Math.PI) d-=Math.PI*2; if(d<-Math.PI) d+=Math.PI*2;
+    const ax=g.pipObj.slice(-1);
+    if(isA){ if(ax==='X') selected.rotation.x-=d; else if(ax==='Y') selected.rotation.y-=d; else selected.rotation.z+=d; renderSelRot(); updatePosReadout(); }
+    else { const c=S.cam; if(ax==='X') c.pitch=clamp(c.pitch-d,-89.9*D2R,89.9*D2R); else if(ax==='Y') c.yaw-=d; else c.roll+=d; applyCam(); }
+    return;
+  }
   const r=pipRect(), m=(S.mapZoom*2)/r.h; setupTopCam();
   const right=new THREE.Vector3().setFromMatrixColumn(topCam.matrixWorld,0), up=new THREE.Vector3().setFromMatrixColumn(topCam.matrixWorld,1);
   const plan=isPlanView();

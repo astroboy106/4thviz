@@ -1361,7 +1361,9 @@ const gizmo=new THREE.Group(); const gizParts={};
   const g=new THREE.Group(), m=new THREE.MeshBasicMaterial({color:c,depthTest:false,transparent:true,opacity:1});
   const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,1,8),m); shaft.position.y=.5;
   const tip=new THREE.Mesh(new THREE.ConeGeometry(.08,.2,14),m); tip.position.y=1.1;
-  g.add(shaft,tip); g.rotation.set(...rot); g.traverse(o=>{o.renderOrder=999;}); gizmo.add(g); gizParts[k]={m};
+  g.add(shaft,tip); g.rotation.set(...rot);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1,.03,8,72),m); ring.rotation.set(...({x:[0,Math.PI/2,0],y:[Math.PI/2,0,0],z:[0,0,0]})[k]); ring.visible=false;
+  g.traverse(o=>{o.renderOrder=999;}); ring.renderOrder=999; gizmo.add(g,ring); gizParts[k]={m,ax:g,ring};
 });
 gizmo.visible=false; scene.add(gizmo);
 const GIZ_ACTIVE={select:'xyz',rot:'xyz',pantilt:'xy',dolly:'xz',boom:'y',orbit:'y',roll:'z'};
@@ -1370,8 +1372,27 @@ function updateGizmo(){
   const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3());
   gizmo.visible=true; gizmo.position.copy(c);
   gizmo.scale.setScalar(clamp(c.distanceTo(shotCam.position)*.12,.35,3));
-  const act=GIZ_ACTIVE[S.mode]||'xyz';
-  for(const k of ['x','y','z']) gizParts[k].m.opacity=act.includes(k)?1:.3;
+  const act=GIZ_ACTIVE[S.mode]||'xyz', RINGS=S.mode==='rot';
+  for(const k of ['x','y','z']){ gizParts[k].m.opacity=act.includes(k)?1:.3; gizParts[k].ring.visible=RINGS; gizParts[k].ax.visible=!RINGS; }
+}
+/* main-view ring handles (rotation mode only) */
+function mainProj(v){ const fr=frameRect(), q=v.clone().project(shotCam); return {x:fr.x+(q.x+1)/2*fr.w, y:fr.y+(1-q.y)/2*fr.h, z:q.z}; }
+function mainRingHit(x,y){
+  if(S.mode!=='rot'||!selected||CT!=='obj'||!gizmo.visible) return null;
+  const c=gizmo.position.clone(), R=gizmo.scale.x, q=new THREE.Quaternion();
+  let best=null, bd=14;
+  for(const k of ['x','y','z']){ const [u,v]=RING_UV[k].map(a=>new THREE.Vector3(...a)); const pts=[];
+    for(let i=0;i<=64;i++){ const t=i/64*Math.PI*2; pts.push(mainProj(c.clone().addScaledVector(u,Math.cos(t)*R).addScaledVector(v,Math.sin(t)*R))); }
+    for(let i=0;i<pts.length-1;i++){ if(pts[i].z>1||pts[i+1].z>1) continue; const d=distToSeg(x,y,pts[i],pts[i+1]); if(d<bd){ bd=d; best=k; } } }
+  return best;
+}
+function mainRingDrag(k,p,dx,dy){
+  const c=gizmo.position.clone(), c0=mainProj(c);
+  let d=Math.atan2(p.y-c0.y,p.x-c0.x)-Math.atan2(p.y-dy-c0.y,p.x-dx-c0.x); if(d>Math.PI) d-=Math.PI*2; if(d<-Math.PI) d+=Math.PI*2;
+  const w=new THREE.Vector3(k==='x'?1:0,k==='y'?1:0,k==='z'?1:0), view=c.clone().sub(shotCam.position);
+  const r=w.dot(view)<0?-d:d;   // 화면에서 돌린 방향 그대로 회전
+  selected.rotation[k]+=r; if(k!=='y') selected.rotation[k]=clamp(selected.rotation[k],-Math.PI,Math.PI);
+  renderSelRot(); updatePosReadout();
 }
 /* map gizmos: sized to the map zoom, visible only in the map overlay */
 function makeGiz(layer){ const g=new THREE.Group(), parts={};
@@ -1675,6 +1696,7 @@ canvas.addEventListener('pointerdown',e=>{
     gest={type:'one',moved:false,pip:inPip(p.x,p.y),x:p.x,y:p.y};
     if(gest.pip){ gest.pipObj=pipPick(p.x,p.y); }
     else{
+      const rk=mainRingHit(p.x,p.y); if(rk){ gest.ring=rk; return; }
       const hit=pick(p.x,p.y); gest.hit=hit;
       if(hit&&!(S.full&&S.dof)&&S.mode==='select'){select(hit); const gp=groundHit(p.x,p.y); gest.drag=hit; gest.off=gp?hit.position.clone().sub(gp):new THREE.Vector3();}
     }
@@ -1692,6 +1714,7 @@ canvas.addEventListener('pointermove',e=>{
   const c=S.cam, fr=frameRect(), k=OPT.vfov/fr.h, sp=S.speed, inv=S.inv?-1:1;
   if(gest.type==='one'){
     if(gest.pip){ pipDrag(gest,dx,dy,p); return; }
+    if(gest.ring){ mainRingDrag(gest.ring,p,dx,dy); return; }
     if(gest.drag){ const gp=groundHit(p.x,p.y); if(gp){gest.drag.position.set(gp.x+gest.off.x,0,gp.z+gest.off.z); updatePosReadout();} return; }
     const m=(S.mode==='select'||S.mode==='rot')?'pantilt':S.mode;
     if(CT==='obj'&&selected){ objGesture(m,dx,dy,k,inv); updatePosReadout(); renderSelRot(); return; }
@@ -1720,7 +1743,7 @@ canvas.addEventListener('pointermove',e=>{
 function endPtr(e){
   if(!ptrs.has(e.pointerId)) return;
   const pr=ptrs.get(e.pointerId); ptrs.delete(e.pointerId);
-  if(gest&&gest.type==='one'&&!gest.moved&&!gest.pip){ if(S.full&&S.dof) focusTap(gest.x,gest.y); else { select(gest.hit||null); if(gest.hit) showTab('sel'); } }
+  if(gest&&gest.type==='one'&&!gest.moved&&!gest.pip&&!gest.ring){ if(S.full&&S.dof) focusTap(gest.x,gest.y); else { select(gest.hit||null); if(gest.hit) showTab('sel'); } }
   if(gest&&gest.type==='one'&&!gest.moved&&gest.pip){ const po=gest.pipObj; if(po==='cam'){ CT='cam'; renderTools(); showTab('cam'); } else if(po&&po!=='aim'){ select(po); showTab('sel'); } }
   if(gest&&(gest.drag||gest.type==='one'||gest.type==='two')) {syncCamUI(); save();}
   if(ptrs.size===0) gest=null;

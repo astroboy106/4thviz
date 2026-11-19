@@ -779,11 +779,12 @@ function buildHuman(p){
   neck.add(mesh(new THREE.CylinderGeometry(.028*H*neckK,.032*H*neckK,neckL*1.4,12),skin,0,neckL/2,0));
   const head=new THREE.Group(); head.position.y=neckL; neck.add(head); J.head=head;
   const r=headH/2;
-  const hm=mesh(new THREE.SphereGeometry(r,24,18),skin,0,r,0); hm.scale.set(.8*faceK,faceKy,.92*faceK); head.add(hm);
-  const nose=mesh(new THREE.ConeGeometry(r*.12,r*.3,8),skin,0,r*.92,r*.9); nose.rotation.x=Math.PI/2; head.add(nose);
-  for(const s of[-1,1]) head.add(mesh(new THREE.SphereGeometry(r*.07,8,6),dark,s*r*.3,r*1.1,r*.8));
-  const cap=mesh(new THREE.SphereGeometry(r*1.05,24,14,0,Math.PI*2,0,Math.PI*.52),hair,0,r*1.02,-r*.04); cap.scale.set(.83*faceK,faceKy,.95*faceK); cap.rotation.x=-.3; head.add(cap);
-  if(fem){const lh=mesh(new THREE.CapsuleGeometry(r*.72,headH*.75,6,14),hair,0,r*.45,-r*.42); lh.scale.z=.55; head.add(lh);}
+  const fg=new THREE.Group(); fg.scale.set(faceK,faceKy,faceK); head.add(fg); // 얼굴 전체를 같은 비율로 키워 눈·코가 함몰되지 않게
+  const hm=mesh(new THREE.SphereGeometry(r,24,18),skin,0,r,0); hm.scale.set(.8,1,.92); fg.add(hm);
+  const nose=mesh(new THREE.ConeGeometry(r*.12,r*.3,8),skin,0,r*.92,r*.9); nose.rotation.x=Math.PI/2; fg.add(nose);
+  for(const s of[-1,1]) fg.add(mesh(new THREE.SphereGeometry(r*.07,8,6),dark,s*r*.3,r*1.1,r*.8));
+  const cap=mesh(new THREE.SphereGeometry(r*1.05,24,14,0,Math.PI*2,0,Math.PI*.52),hair,0,r*1.02,-r*.04); cap.scale.set(.83,1,.95); cap.rotation.x=-.3; fg.add(cap);
+  if(fem){const lh=mesh(new THREE.CapsuleGeometry(r*.72,headH*.75,6,14),hair,0,r*.45,-r*.42); lh.scale.z=.55; fg.add(lh);}
 
   const uaL=.175*H, faL=.15*H, armR=.03*H*limbK;
   for(const s of[1,-1]){ // 1 = left (+x)

@@ -254,6 +254,7 @@ footer{background:var(--panel);border-top:1px solid var(--line);display:flex;min
 .tlbar button{height:32px;padding:0 10px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);font:500 12px var(--sans);white-space:nowrap;flex:none}
 .tlbar button.pl{width:44px;background:var(--acc);border-color:var(--acc);color:#111;font-weight:700}
 .tlbar button.on{background:var(--acc2);border-color:var(--acc2);color:#04151d;font-weight:600}
+.tlbar button:disabled{opacity:.35}
 .tlbar button.rec{color:var(--red);border-color:#5a2a2a}
 body.recording .tlbar button.rec{background:var(--red);color:#fff}
 .tlbar select{width:80px;height:32px;flex:none}
@@ -267,6 +268,7 @@ body.recording .tlbar button.rec{background:var(--red);color:#fff}
 .tlr.ruler{height:20px;position:sticky;top:0;background:var(--panel);z-index:2}
 .tlr.ruler span{position:absolute;top:3px;transform:translateX(-50%);font:500 9.5px var(--mono);color:var(--tx3)}
 .tlr .key{position:absolute;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;background:var(--acc);transform:rotate(45deg);border:1px solid #111;z-index:1}
+.tlr .key.on::after{content:"";position:absolute;inset:-5px;border:1px solid #fff;pointer-events:none}
 .tlr .lane::after{content:"";position:absolute;inset:-6px -14px;}
 .tlr.ruler .lab .rlab{position:static;transform:none;font:600 10px var(--mono);color:var(--acc2)}
 .tlr .rng{position:absolute;top:2px;bottom:2px;background:rgba(61,189,242,.22);border-top:2px solid var(--acc2);pointer-events:none}
@@ -512,7 +514,7 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
       <div class="tlbar">
         <button id="tlStart" title="처음으로">⏮</button><button id="tlPlay" class="pl">▶</button><span id="tlTime">00:00.0</span>
         <select id="tlDur"><option value="5">5초</option><option value="10">10초</option><option value="15">15초</option><option value="20">20초</option><option value="30">30초</option><option value="45">45초</option><option value="60">60초</option><option value="90">90초</option><option value="120">120초</option></select>
-        <i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">키 삭제</button><button id="tlClear">트랙 비우기</button><button id="tlAuto">자동 키</button>
+        <i></i><button id="tlKeyCam">◆ 카메라 키</button><button id="tlKeyObj">◆ 선택 키</button><button id="tlDel">키 삭제</button><button id="tlIp" disabled>보간</button><button id="tlClear">트랙 비우기</button><button id="tlAuto">자동 키</button>
         <i></i><button id="tlIn">IN</button><button id="tlOut">OUT</button><button id="tlRngX">구간 해제</button><button id="tlLoop">반복</button>
         <i></i><button id="tlRec" class="rec">● 녹화</button>
       </div>
@@ -658,7 +660,10 @@ const stage=$('#stage'), canvas=$('#cv');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
+let BASE_EV=1.05;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=BASE_EV;
+const tGain=()=>clamp(Math.pow(2.8/(S.cam.t||2.8),2),.05,16);
+function applyExposure(){ renderer.toneMappingExposure=BASE_EV*tGain(); }
 renderer.setScissorTest(true);
 
 const scene=new THREE.Scene();
@@ -1362,7 +1367,7 @@ function fwdFlat(){const y=S.cam.yaw; return new THREE.Vector3(-Math.sin(y),0,-M
 function rightFlat(){const y=S.cam.yaw; return new THREE.Vector3(Math.cos(y),0,-Math.sin(y));}
 let OPT=null;
 function applyCam(){
-  const c=S.cam; OPT=optics();
+  const c=S.cam; OPT=optics(); applyExposure();
   c.pos[1]=Math.max(.05,c.pos[1]); c.pitch=clamp(c.pitch,-89.9*D2R,89.9*D2R);
   shotCam.position.fromArray(c.pos); shotCam.rotation.set(c.pitch,c.yaw,c.roll,'YXZ');
   shotCam.fov=OPT.vfov*R2D; shotCam.aspect=OPT.A; shotCam.updateProjectionMatrix();
@@ -1481,7 +1486,7 @@ function applyEnv(){
   ENV.el=night?38:Math.max(el,1.5); ENV.az=night?az+180:az; ENV.dark=clamp((6-el)/14,0,1);
   sun.color.copy(sunC); sun.intensity=sunI; sun.castShadow=!!S.shadows&&sunI>.3;
   hemi.color.set(K.hs); hemi.groundColor.set(K.hg); hemi.intensity=hemiI;
-  renderer.toneMappingExposure=ev;
+  BASE_EV=ev; applyExposure();
   skyMat.uniforms.top.value.copy(top); skyMat.uniforms.hor.value.copy(hor);
   const gb=C3(S.ground); if(snow) gb.lerp(C3('#e9edf0'),.85); if(wet) gb.multiplyScalar(.55);
   groundMat.color.copy(gb); groundMat.roughness=wet?.35:1; groundMat.metalness=wet?.15:0;
@@ -1627,7 +1632,8 @@ canvas.addEventListener('pointermove',e=>{
 function endPtr(e){
   if(!ptrs.has(e.pointerId)) return;
   const pr=ptrs.get(e.pointerId); ptrs.delete(e.pointerId);
-  if(gest&&gest.type==='one'&&!gest.moved&&!gest.pip){ if(S.full&&S.dof) focusTap(gest.x,gest.y); else select(gest.hit||null); }
+  if(gest&&gest.type==='one'&&!gest.moved&&!gest.pip){ if(S.full&&S.dof) focusTap(gest.x,gest.y); else { select(gest.hit||null); if(gest.hit) showTab('sel'); } }
+  if(gest&&gest.type==='one'&&!gest.moved&&gest.pip){ const po=gest.pipObj; if(po==='cam') showTab('cam'); else if(po&&po!=='aim'){ select(po); showTab('sel'); } }
   if(gest&&(gest.drag||gest.type==='one'||gest.type==='two')) {syncCamUI(); save();}
   if(ptrs.size===0) gest=null;
   else if(ptrs.size===1){ gest={type:'one',moved:true}; }
@@ -1732,7 +1738,7 @@ function updateCamReadouts(){
   const top=`${b.name} · ${L.brand} ${lensName} · ${fmt(c.focal,0)}mm${o.sq>1?` (${o.sq}x)`:''} · T${c.t} · ${A}:1`;
   $('#sum').textContent=top; $('#hudT').textContent=top;
   const pan=((-c.yaw*R2D)%360+540)%360-180;
-  $('#hudB').textContent=`H ${fmt(c.pos[1],2)}m   PAN ${fmt(pan,1)}°   TILT ${fmt(c.pitch*R2D,1)}°   ROLL ${fmt(-c.roll*R2D,1)}°   HFOV ${fmt(o.hfov*R2D,1)}°   FOCUS ${fmt(c.focus,2)}m`;
+  $('#hudB').textContent=`H ${fmt(c.pos[1],2)}m   PAN ${fmt(pan,1)}°   TILT ${fmt(c.pitch*R2D,1)}°   ROLL ${fmt(-c.roll*R2D,1)}°   HFOV ${fmt(o.hfov*R2D,1)}°   FOCUS ${fmt(c.focus,2)}m   EV ${fmt(2*Math.log2(2.8/c.t),1)}`;
   layoutOverlay();
 }
 $('#body').onchange=e=>{S.cam.body=e.target.value; applyCam(); syncCamUI(); save();};
@@ -2071,16 +2077,20 @@ function kseg(keys,t){ // returns [i,u] for interpolation
   let i=0; while(i<n-1&&keys[i+1].t<=t) i++; return [i,(t-keys[i].t)/Math.max(1e-6,keys[i+1].t-keys[i].t)];
 }
 function cr(p0,p1,p2,p3,u){ const u2=u*u,u3=u2*u; return .5*((2*p1)+(-p0+p2)*u+(2*p0-5*p1+4*p2-p3)*u2+(-p0+3*p1-3*p2+p3)*u3); }
-function posAt(keys,t,get){ const [i,u]=kseg(keys,t); const n=keys.length; if(u===0||i>=n-1) return get(keys[i]);
-  const k0=keys[Math.max(0,i-1)],k1=keys[i],k2=keys[i+1],k3=keys[Math.min(n-1,i+2)];
-  return get(k1).map((_,j)=>cr(get(k0)[j],get(k1)[j],get(k2)[j],get(k3)[j],u)); }
+const bezT=(a,b,t)=>3*a*(1-t)*(1-t)*t+3*b*(1-t)*t*t+t*t*t;
+function bezEase(u){ // cubic-bezier(.42,0,.58,1) ease-in-out timing
+  let lo=0,hi=1,t=u; for(let n=0;n<30;n++){ const x=bezT(.42,.58,t); if(Math.abs(x-u)<1e-5) break; if(x<u) lo=t; else hi=t; t=(lo+hi)/2; }
+  return bezT(0,1,t); }
+const easeSeg=(keys,i,u)=>(keys[i]&&keys[i].ip==='bez')?bezEase(u):u; // ip on key = segment starting at that key
+function posAt(keys,t,get){ const [i,u0]=kseg(keys,t); if(u0===0||i>=keys.length-1) return get(keys[i]);
+  const u=easeSeg(keys,i,u0), A=get(keys[i]), B=get(keys[i+1]); return A.map((v,j)=>lerp(v,B[j],u)); }
 function camAt(t){
-  const K=animData().cam; if(!K.length) return null; const [i,u]=kseg(K,t);
+  const K=animData().cam; if(!K.length) return null; const [i,u0]=kseg(K,t); const u=easeSeg(K,i,u0);
   const a=K[i].s, b=(K[i+1]||K[i]).s; const pos=posAt(K,t,k=>k.s.pos);
-  return Object.assign({},a,{pos,yaw:angLerp(a.yaw,b.yaw,u),pitch:lerp(a.pitch,b.pitch,u),roll:lerp(a.roll,b.roll,u),focal:lerp(a.focal,b.focal,u),focus:lerp(a.focus,b.focus,u),t:u<1?a.t:b.t});
+  return Object.assign({},a,{pos,yaw:angLerp(a.yaw,b.yaw,u),pitch:lerp(a.pitch,b.pitch,u),roll:lerp(a.roll,b.roll,u),focal:lerp(a.focal,b.focal,u),focus:lerp(a.focus,b.focus,u),t:u0<1?a.t:b.t});
 }
 function objAt(keys,t){
-  const [i,u]=kseg(keys,t); const a=keys[i], b=keys[i+1]||a;
+  const [i,u0]=kseg(keys,t); const u=easeSeg(keys,i,u0); const a=keys[i], b=keys[i+1]||a;
   const [x,z]=posAt(keys,t,k=>[k.x,k.z]);
   return {x,z,r:angLerp(a.r,b.r,u),pose:a.pose,head:lerp(a.head||0,b.head||0,u)};
 }
@@ -2142,6 +2152,9 @@ function tlRows(){
   for(const u of set){ const o=objByUid(u); if(o) rows.push({id:u,name:objName(o),keys:(A.obj[u]||[]).map(k=>k.t)}); }
   return rows;
 }
+const isSelKey=(row,t)=>!!TL.selKey&&TL.selKey.row===row&&Math.abs(TL.selKey.t-t)<.01;
+function keyOfSel(){ const k=TL.selKey; if(!k) return null; const A=animData(); const arr=k.row==='cam'?A.cam:A.obj[k.row]; return (arr||[]).find(x=>Math.abs(x.t-k.t)<.01)||null; }
+function syncIpBtn(){ const b=$('#tlIp'); if(!b) return; const k=keyOfSel(); b.disabled=!k; b.classList.toggle('on',!!k&&k.ip==='bez'); b.textContent=k?(k.ip==='bez'?'보간 베지어':'보간 선형'):'보간'; }
 function renderTL(){
   if(!S.tlOn) return;
   const A=animData(), rows=tlRows(), body=$('#tlRows');
@@ -2151,7 +2164,8 @@ function renderTL(){
   const R=tlRange(), ra=R.a/A.dur*100, rb=R.b/A.dur*100;
   const shade=R.set?`<i class="rsh" style="left:0;width:${ra}%"></i><i class="rsh" style="left:${rb}%;right:0"></i>`:'';
   body.innerHTML=`<div class="tlr ruler"><div class="lab">${R.set?`<span class="rlab">${fmt(R.a,1)}–${fmt(R.b,1)}s</span>`:''}</div><div class="lane">${ticks.map(s=>`<span style="left:${s/A.dur*100}%">${s}s</span>`).join('')}${R.set?`<i class="rng" style="left:${ra}%;width:${rb-ra}%"></i><b class="rh" data-h="in" style="left:${ra}%">IN</b><b class="rh out" data-h="out" style="left:${rb}%">OUT</b>`:''}</div></div>`+
-    rows.map(r=>`<div class="tlr ${TL.sel===r.id?'on':''}" data-row="${r.id}"><div class="lab">${r.id==='cam'?'🎥 ':''}${r.name}</div><div class="lane">${r.keys.map((t,i)=>`<b class="key" data-row="${r.id}" data-i="${i}" style="left:${t/A.dur*100}%"></b>`).join('')}${r.keys.length>1?`<em style="left:${r.keys[0]/A.dur*100}%;width:${(r.keys[r.keys.length-1]-r.keys[0])/A.dur*100}%"></em>`:''}${shade}</div></div>`).join('');
+    rows.map(r=>`<div class="tlr ${TL.sel===r.id?'on':''}" data-row="${r.id}"><div class="lab">${r.id==='cam'?'🎥 ':''}${r.name}</div><div class="lane">${r.keys.map((t,i)=>`<b class="key${isSelKey(r.id,t)?' on':''}" data-row="${r.id}" data-i="${i}" style="left:${t/A.dur*100}%"></b>`).join('')}${r.keys.length>1?`<em style="left:${r.keys[0]/A.dur*100}%;width:${(r.keys[r.keys.length-1]-r.keys[0])/A.dur*100}%"></em>`:''}${shade}</div></div>`).join('');
+  syncIpBtn();
   renderPlayhead();
 }
 function renderPlayhead(){
@@ -2165,12 +2179,12 @@ function laneT(clientX){ const lane=$('#tlRows .lane').getBoundingClientRect(); 
 $('#tlBody').addEventListener('pointerdown',e=>{
   if(TL.rec) return;
   const key=e.target.closest('.key'), row=e.target.closest('[data-row]'), lab=e.target.closest('.lab');
-  if(row&&lab){ TL.sel=row.dataset.row; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o) select(o);} renderTL(); return; }
+  if(row&&lab){ TL.sel=row.dataset.row; TL.selKey=null; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ select(o); showTab('sel'); }} else showTab('cam'); renderTL(); return; }
   if(TL.playing) tlPlay(false);
   $('#tlBody').setPointerCapture(e.pointerId);
   const rh=e.target.closest('.rh'); if(rh){ TL.drag={type:'rng',h:rh.dataset.h}; return; }
-  if(key){ TL.sel=key.dataset.row; const arr=TL.sel==='cam'?animData().cam:animData().obj[TL.sel]; TL.drag={type:'key',arr,k:arr[+key.dataset.i],x0:e.clientX,moved:false}; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o&&o!==selected) select(o);} return; }
-  TL.drag={type:'scrub'}; tlSetTime(laneT(e.clientX));
+  if(key){ TL.sel=key.dataset.row; const arr=TL.sel==='cam'?animData().cam:animData().obj[TL.sel]; TL.drag={type:'key',arr,k:arr[+key.dataset.i],x0:e.clientX,moved:false}; TL.selKey={row:TL.sel,t:arr[+key.dataset.i].t}; if(TL.sel!=='cam'){const o=objByUid(TL.sel); if(o){ if(o!==selected) select(o); showTab('sel'); }} else showTab('cam'); renderTL(); return; }
+  TL.selKey=null; TL.drag={type:'scrub'}; tlSetTime(laneT(e.clientX)); renderTL();
 });
 $('#tlBody').addEventListener('pointermove',e=>{
   const d=TL.drag; if(!d) return;
@@ -2183,6 +2197,7 @@ $('#tlBody').addEventListener('pointerup',tlUp); $('#tlBody').addEventListener('
 $('#tlPlay').onclick=()=>tlPlay(!TL.playing);
 $('#tlStart').onclick=()=>{ tlPlay(false); tlSetTime(0); snapshotAll(); };
 $('#tlDur').onchange=e=>{ const A=animData(); A.dur=+e.target.value; TL.t=Math.min(TL.t,A.dur); if(A.outT!=null) A.outT=Math.min(A.outT,A.dur); if(A.inT!=null&&A.inT>=A.dur-.1){A.inT=null;A.outT=null;} renderTL(); save(); };
+$('#tlIp').onclick=()=>{ const k=keyOfSel(); if(!k){toast('보간을 바꿀 키를 먼저 선택하세요');return;} k.ip=k.ip==='bez'?'lin':'bez'; applyAnim(TL.t); renderTL(); save(); toast(k.ip==='bez'?'베지어 보간':'선형 보간'); };
 $('#tlKeyCam').onclick=()=>{ TL.sel='cam'; keyCam(); toast('카메라 키 '+tc(TL.t)); };
 $('#tlKeyObj').onclick=()=>{ if(!selected){toast('오브젝트를 먼저 선택하세요');return;} TL.sel=selected.userData.uid; keyObj(selected); toast(objName(selected)+' 키 '+tc(TL.t)); };
 $('#tlDel').onclick=()=>{ const A=animData(), arr=TL.sel==='cam'?A.cam:A.obj[TL.sel]; if(!arr||!arr.length){toast('지울 키가 없습니다');return;}

@@ -1354,6 +1354,41 @@ function updateGizmo(){
   const act=GIZ_ACTIVE[S.mode]||'xyz';
   for(const k of ['x','y','z']) gizParts[k].m.opacity=act.includes(k)?1:.3;
 }
+/* map gizmos: sized to the map zoom, visible only in the map overlay */
+function makeGiz(layer){ const g=new THREE.Group(), parts={};
+  [['x',0xff4d4d,[0,0,-Math.PI/2]],['y',0x4dff6a,[0,0,0]],['z',0x4da6ff,[Math.PI/2,0,0]]].forEach(([k,c,rot])=>{
+    const p=new THREE.Group(), m=new THREE.MeshBasicMaterial({color:c,depthTest:false,transparent:true,opacity:1});
+    const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,1,8),m); shaft.position.y=.5;
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(.08,.2,14),m); tip.position.y=1.1;
+    p.add(shaft,tip); p.rotation.set(...rot); g.add(p); parts[k]={m};
+  });
+  g.traverse(o=>{o.layers.set(layer); o.renderOrder=999;}); scene.add(g); return {g,parts};
+}
+const gizObjMap=makeGiz(1), gizCamMap=makeGiz(1);
+gizObjMap.g.visible=false; gizCamMap.g.visible=false;
+const setActiveAxes=(parts,act)=>{ for(const k of ['x','y','z']) parts[k].m.opacity=act.includes(k)?1:.3; };
+function updateMapGizmos(){
+  gizObjMap.g.visible=false; gizCamMap.g.visible=false;
+  if(!S.map||hideForCapture) return;
+  const L=S.mapZoom*.12;
+  if(selected){ const c=new THREE.Box3().setFromObject(selected).getCenter(new THREE.Vector3());
+    gizObjMap.g.visible=true; gizObjMap.g.position.copy(c); gizObjMap.g.rotation.set(0,0,0); gizObjMap.g.scale.setScalar(L);
+    setActiveAxes(gizObjMap.parts, GIZ_ACTIVE[S.mode]||'xyz'); }
+  gizCamMap.g.visible=true; gizCamMap.g.position.fromArray(S.cam.pos); gizCamMap.g.rotation.copy(shotCam.rotation); gizCamMap.g.scale.setScalar(L);
+  setActiveAxes(gizCamMap.parts,'xyz');
+}
+// camera rotation handles: pick a camera axis near its tip in the map overlay
+function distToSeg(px,py,a,b){ const vx=b.x-a.x, vy=b.y-a.y, L2=vx*vx+vy*vy||1; const t=clamp(((px-a.x)*vx+(py-a.y)*vy)/L2,0,1); return Math.hypot(px-(a.x+vx*t),py-(a.y+vy*t)); }
+function rotHandle(x,y){
+  if(!S.map) return null;
+  const cpos=new THREE.Vector3().fromArray(S.cam.pos), L=S.mapZoom*.13, c0=pipProj(cpos);
+  if(Math.hypot(x-c0.x,y-c0.y)<=12) return null;
+  for(const [k,ax] of [['rotX',[1,0,0]],['rotY',[0,1,0]],['rotZ',[0,0,1]]]){
+    const dir=new THREE.Vector3(...ax).applyQuaternion(shotCam.quaternion), ep=pipProj(cpos.clone().addScaledVector(dir,L));
+    if(distToSeg(x,y,c0,ep)<12) return k;
+  }
+  return null;
+}
 /* selection box */
 let selBox=null;
 let CT='cam'; // control target: 'cam' or 'obj'
@@ -1564,7 +1599,7 @@ function render(){
     aimMk.position.copy(aimPoint3()); aimLine.geometry.setFromPoints([isPlanView()?new THREE.Vector3(S.cam.pos[0],.05,S.cam.pos[2]):new THREE.Vector3().fromArray(S.cam.pos),aimMk.position.clone()]); aimMk.scale.setScalar(S.mapZoom/18); camIcon.scale.setScalar(Math.max(1,S.mapZoom/18));
     const fogWas=scene.fog; scene.fog=null;
     renderer.setViewport(pr.x,SH-pr.y-pr.h,pr.w,pr.h); renderer.setScissor(pr.x,SH-pr.y-pr.h,pr.w,pr.h);
-    renderer.render(scene,topCam);
+    const gWas=gizmo.visible; gizmo.visible=false; updateMapGizmos(); renderer.render(scene,topCam); gizmo.visible=gWas;
     scene.fog=fogWas;
   }
 }
@@ -1684,7 +1719,7 @@ function pipNdc(x,y){ const r=pipRect(); return new THREE.Vector2((x-r.x)/r.w*2-
 function pipPlane(x,y,h){ setupTopCam(); raycaster.setFromCamera(pipNdc(x,y),topCam); const p=new THREE.Vector3(); return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-h),p)?p:null; }
 function pipProj(v){ const r=pipRect(), q=v.clone().project(topCam); return {x:r.x+(q.x+1)/2*r.w,y:r.y+(1-q.y)/2*r.h}; }
 function pipPick(x,y){
-  setupTopCam(); const R=26;
+  setupTopCam(); const R=26; const hr=rotHandle(x,y); if(hr) return hr;
   const cp=pipProj(new THREE.Vector3().fromArray(S.cam.pos)); if(Math.hypot(cp.x-x,cp.y-y)<R) return 'cam';
   const ap=pipProj(aimPoint3()); if(Math.hypot(ap.x-x,ap.y-y)<R) return 'aim';
   let best=null,bd=1e9;
@@ -1696,6 +1731,9 @@ function pipPick(x,y){
   return null;
 }
 function pipDrag(g,dx,dy,p){
+  if(typeof g.pipObj==='string'&&g.pipObj.startsWith('rot')){ const c=S.cam;
+    if(g.pipObj==='rotX') c.pitch=clamp(c.pitch-dy*.008,-89.9*D2R,89.9*D2R); else if(g.pipObj==='rotY') c.yaw-=dx*.008; else c.roll-=dx*.008;
+    applyCam(); return; }
   const r=pipRect(), m=(S.mapZoom*2)/r.h; setupTopCam();
   const right=new THREE.Vector3().setFromMatrixColumn(topCam.matrixWorld,0), up=new THREE.Vector3().setFromMatrixColumn(topCam.matrixWorld,1);
   const plan=isPlanView();

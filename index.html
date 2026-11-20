@@ -1691,7 +1691,11 @@ function hourPreset(id){ const s=SEASON[S.season]; return {dawn:s.rise-.6,mornin
 let SW=1,SH=1;
 function frameRect(){const A=OPT.A; let fw,fh; if(SW/SH>A){fh=SH;fw=SH*A;}else{fw=SW;fh=SW/A;} return {x:(SW-fw)/2,y:(SH-fh)/2,w:fw,h:fh};}
 function pipRect(){const fr=frameRect(); if(S.mapBig){ let w=Math.min(920,SW-94), h=w*.75; if(h>SH-20){ h=SH-20; w=h/.75; } return {x:10,y:10,w,h}; } const w=Math.min(SW*.26,230); return {x:fr.x+10,y:Math.max(fr.y,0)+26,w,h:w*.75};}
-function shotInset(){ const pr=pipRect(), w=Math.round(pr.w*.36), h=Math.round(w/(OPT?OPT.A:1.78)); return {x:pr.x+12,y:pr.y+pr.h-h-12,w,h}; }
+function shotInset(){ const pr=pipRect(), w=Math.round(pr.w*.36), h=Math.round(w/(OPT?OPT.A:1.78));
+  let bottom=pr.y+pr.h-12;
+  const hb=document.getElementById('hudB'); // HUD 하단 글자와 겹치지 않도록 그 위에 배치
+  if(S.hud&&hb&&hb.offsetParent){ const st=stage.getBoundingClientRect(), r=hb.getBoundingClientRect(); if(r.height&&r.top-st.top<bottom+2) bottom=Math.min(bottom,r.top-st.top-8); }
+  return {x:pr.x+12,y:Math.max(pr.y+40,bottom-h),w,h}; }
 const insetOn=()=>!!(S.map&&S.mapBig);
 function resize(){SW=stage.clientWidth;SH=stage.clientHeight; renderer.setSize(SW,SH,false); layoutOverlay();}
 new ResizeObserver(resize).observe(stage);

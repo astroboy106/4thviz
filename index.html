@@ -223,6 +223,12 @@ main{position:relative;background:#050506;overflow:hidden;min-width:0;min-height
 #tools button{width:62px;height:52px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(20,22,25,.82);color:var(--tx2);font:600 10.5px var(--sans);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 #tools button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7}
 #tools button.on{background:var(--acc);color:#111;border-color:var(--acc)}
+#pipShot{position:absolute;border:1px solid rgba(255,255,255,.85);border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.5);display:none;pointer-events:none}
+#pipShot span{position:absolute;left:5px;top:3px;font:600 9px var(--mono);color:rgba(255,255,255,.85);letter-spacing:.08em;text-shadow:0 1px 2px #000}
+#joy{position:absolute;left:28px;bottom:28px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.35);z-index:6;display:none;touch-action:none;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+#joy i{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#app.full #joy{display:block}
+body.recording #joy{display:none!important}
 #pip{position:absolute;left:10px;top:10px;border:1px solid rgba(255,255,255,.3);border-radius:6px;z-index:3;pointer-events:none}
 #pip .pl{position:absolute;left:6px;top:4px;font:600 9.5px var(--mono);color:rgba(255,255,255,.75);letter-spacing:.1em}
 #pip .pv{position:absolute;right:4px;top:4px;display:flex;gap:3px;pointer-events:auto}
@@ -518,6 +524,8 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
     <canvas id="cv"></canvas>
     <div id="frame"><div class="g" id="g1"></div><div class="g" id="g2"></div><div class="g" id="g3"></div><div class="g" id="g4"></div><div class="safe"><i>ACTION SAFE 90%</i></div><div class="tsafe"><i>TITLE SAFE 80%</i></div><div class="ctr"></div>
       <div class="hud" id="hudT"></div><div class="hud" id="hudB"></div><div id="rec">● PLAY</div></div>
+    <div id="joy"><i></i></div>
+    <div id="pipShot"><span>CAM</span></div>
     <div id="pip"><div class="pl" id="pipLabel">탑뷰</div><div class="pv" id="pipViews"></div><div class="pb"><button id="pipCtr">◎</button><button id="pipOut">−</button><button id="pipIn">+</button><button id="pipSize">⤢</button></div></div>
     <div id="tools"></div>
     <div id="fullBar"><button class="undoB" aria-label="되돌리기"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></button><button class="redoB" aria-label="다시 실행"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></button><button id="fbImg" class="hl">이미지 저장</button><button id="fbSketch">스케치</button><button id="fbTL">타임라인</button><button id="fbPlay">▶ 재생</button><button id="fbRec">● 녹화</button><button id="fbEnv">환경</button><button id="fbDof">디포커스</button><button id="fbHud">HUD</button><button id="fbCtl">컨트롤</button><button id="fbMap">탑뷰</button><button id="fbSafe">세이프 존</button><button id="fbShot">+ 컷</button><button id="fbExit">나가기 ✕</button></div>
@@ -1683,6 +1691,8 @@ function hourPreset(id){ const s=SEASON[S.season]; return {dawn:s.rise-.6,mornin
 let SW=1,SH=1;
 function frameRect(){const A=OPT.A; let fw,fh; if(SW/SH>A){fh=SH;fw=SH*A;}else{fw=SW;fh=SW/A;} return {x:(SW-fw)/2,y:(SH-fh)/2,w:fw,h:fh};}
 function pipRect(){const fr=frameRect(); if(S.mapBig){ let w=Math.min(920,SW-94), h=w*.75; if(h>SH-20){ h=SH-20; w=h/.75; } return {x:10,y:10,w,h}; } const w=Math.min(SW*.26,230); return {x:fr.x+10,y:Math.max(fr.y,0)+26,w,h:w*.75};}
+function shotInset(){ const pr=pipRect(), w=Math.round(pr.w*.36), h=Math.round(w/(OPT?OPT.A:1.78)); return {x:pr.x+12,y:pr.y+pr.h-h-12,w,h}; }
+const insetOn=()=>!!(S.map&&S.mapBig);
 function resize(){SW=stage.clientWidth;SH=stage.clientHeight; renderer.setSize(SW,SH,false); layoutOverlay();}
 new ResizeObserver(resize).observe(stage);
 
@@ -1701,6 +1711,8 @@ function layoutOverlay(){
   const pr=pipRect(), P=$('#pip');
   P.style.display=S.map?'block':'none'; $('#app').classList.toggle('mapbig',!!(S.map&&S.mapBig)); $('#pipLabel').style.display=S.mapBig?'block':'none';
   Object.assign(P.style,{left:pr.x+'px',top:pr.y+'px',width:pr.w+'px',height:pr.h+'px'});
+  const si=shotInset(), PS=$('#pipShot'); PS.style.display=insetOn()?'block':'none';
+  Object.assign(PS.style,{left:si.x+'px',top:si.y+'px',width:si.w+'px',height:si.h+'px'});
 }
 
 let hideForCapture=false;
@@ -1722,6 +1734,10 @@ function render(){
     renderer.setViewport(pr.x,SH-pr.y-pr.h,pr.w,pr.h); renderer.setScissor(pr.x,SH-pr.y-pr.h,pr.w,pr.h);
     const gWas=gizmo.visible; gizmo.visible=false; updateMapGizmos(); renderer.render(scene,topCam); gizmo.visible=gWas;
     scene.fog=fogWas;
+    if(insetOn()){ // 탑뷰를 키웠을 때 왼쪽 아래에 카메라 화면
+      const si=shotInset(); renderer.setViewport(si.x,SH-si.y-si.h,si.w,si.h); renderer.setScissor(si.x,SH-si.y-si.h,si.w,si.h);
+      renderer.setClearColor(0x050506,1); renderer.clear(); renderer.render(scene,shotCam);
+    }
   }
 }
 
@@ -1745,7 +1761,21 @@ function tickPlay(now){
   }
 }
 
-let lastT=0; function loop(now){ const dt=Math.min(.05,(now-(lastT||now))/1000); lastT=now; tickWeather(dt); tickPlay(now); tickTL(dt); if(S.full&&S.dof) tickFocusLock(); render(); recFrame(); requestAnimationFrame(loop); }
+/* fullscreen joystick: up/down = dolly, left/right = truck */
+const JOY={on:false,x:0,y:0,id:null};
+(function(){ const J=document.getElementById('joy'), K=J.querySelector('i');
+  const upd=e=>{ const r=J.getBoundingClientRect(), R=r.width/2; let x=(e.clientX-r.left-R)/R, y=(e.clientY-r.top-R)/R; const m=Math.hypot(x,y); if(m>1){x/=m;y/=m;} JOY.x=x; JOY.y=y; K.style.transform=`translate(${x*R*.6}px,${y*R*.6}px)`; };
+  J.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); J.setPointerCapture(e.pointerId); JOY.on=true; JOY.id=e.pointerId; upd(e); if(play) stopPlay(); });
+  J.addEventListener('pointermove',e=>{ if(JOY.on&&e.pointerId===JOY.id){ e.preventDefault(); upd(e); } });
+  const end=e=>{ if(e.pointerId!==JOY.id) return; JOY.on=false; JOY.x=JOY.y=0; K.style.transform=''; syncCamUI(); save(); };
+  J.addEventListener('pointerup',end); J.addEventListener('pointercancel',end);
+})();
+function tickJoy(dt){
+  if(!JOY.on||!S.full) return; const dz=v=>Math.abs(v)<.12?0:v; const fx=dz(JOY.x), fy=dz(JOY.y); if(!fx&&!fy) return;
+  const sp=2.2*(S.speed||1)*dt, f=fwdFlat(), r=rightFlat(), c=S.cam;
+  c.pos[0]+=(-fy*f.x+fx*r.x)*sp; c.pos[2]+=(-fy*f.z+fx*r.z)*sp; applyCam();
+}
+let lastT=0; function loop(now){ const dt=Math.min(.05,(now-(lastT||now))/1000); lastT=now; tickJoy(dt); tickWeather(dt); tickPlay(now); tickTL(dt); if(S.full&&S.dof) tickFocusLock(); render(); recFrame(); requestAnimationFrame(loop); }
 
 /* ================= GESTURES ================= */
 const ptrs=new Map(); let gest=null;
@@ -1761,6 +1791,7 @@ canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture(e.pointerId);
   const p=local(e); ptrs.set(e.pointerId,{...p,sx:p.x,sy:p.y,t:performance.now()});
   if(ptrs.size===1){
+    if(insetOn()){ const si=shotInset(); if(p.x>=si.x&&p.x<=si.x+si.w&&p.y>=si.y&&p.y<=si.y+si.h){ gest={type:'one',moved:true,inset:true}; return; } }
     gest={type:'one',moved:false,pip:inPip(p.x,p.y),x:p.x,y:p.y};
     if(gest.pip){ gest.pipObj=pipPick(p.x,p.y); }
     else{
@@ -1780,6 +1811,7 @@ canvas.addEventListener('pointermove',e=>{
   prev.x=p.x; prev.y=p.y;
   if(Math.hypot(p.x-prev.sx,p.y-prev.sy)>6) gest.moved=true;
   const c=S.cam, fr=frameRect(), k=OPT.vfov/fr.h, sp=S.speed, inv=S.inv?-1:1;
+  if(gest.inset) return;
   if(gest.type==='one'){
     if(gest.pip){ pipDrag(gest,dx,dy,p); return; }
     if(gest.ring){ mainRingDrag(gest.ring,p,dx,dy); return; }

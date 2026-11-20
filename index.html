@@ -455,13 +455,15 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
       </div>
       <div class="sec"><h4>World Labs 공간</h4>
         <label class="btn imp" for="worldFile">공간 불러오기 (Marble · Atlas)</label>
-        <input type="file" id="worldFile" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
-        <div class="note">SPZ · PLY(스플랫) · SPLAT · KSPLAT · SOG 스플랫, 또는 GLB 메시. 아이패드에서는 500K 스플랫을 권장합니다.</div>
+        <input type="file" id="worldFile" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+        <div class="note">스플랫: SPZ · PLY · SPLAT · KSPLAT · SOG (500K 권장)<br>메시: GLB · FBX · OBJ · DAE · USDZ · STL · 3MF · 3DS 또는 ZIP. 언리얼·유니티·블렌더·CAD에서 내보낸 세트를 레이아웃용으로 가볍게(텍스처 제외, 단색) 불러옵니다.</div>
         <div id="worldCtl" style="display:none">
           <div class="row"><label class="l" id="worldName">-</label></div>
           <div class="row"><label class="l">표시</label><div class="seg" id="worldVis"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
           <div class="row"><label class="l">기본 바닥</label><div class="seg" id="worldGround"><button data-v="1">보이기</button><button data-v="0">숨기기</button></div></div>
-          <div class="row"><label class="l">상하 뒤집기</label><div class="seg" id="worldFlip"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+          <div class="row" id="worldFlipRow"><label class="l">상하 뒤집기</label><div class="seg" id="worldFlip"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+          <div class="row" id="worldZupRow"><label class="l">Z-up 보정</label><div class="seg" id="worldZup"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+          <div class="row" id="worldUnitRow"><label class="l">단위</label><div class="seg" id="worldUnit"><button data-v="1">m</button><button data-v="0.01">cm</button><button data-v="0.001">mm</button><button data-v="0.0254">in</button></div></div>
           <div class="row"><label class="l">높이 <span id="worldYv"></span></label><input type="range" id="worldY" min="-10" max="10" step="0.05"></div>
           <div class="row"><label class="l">방향 <span id="worldRv"></span></label><input type="range" id="worldR" min="-180" max="180" step="1"></div>
           <div class="row"><label class="l">크기 <span id="worldSv"></span></label><input type="range" id="worldS" min="0.1" max="5" step="0.05"></div>
@@ -1308,7 +1310,7 @@ function buildImported(p){
 /* ===== World Labs 공간 (Gaussian splat / GLB) ===== */
 const SPARK='https://sparkjs.dev/releases/spark/2.4.0/spark.module.js';
 const SPLAT_EXT=['spz','splat','ksplat','sog'];
-const WDEF={vis:1,ground:1,flip:1,y:0,r:0,s:1,name:''};
+const WDEF={vis:1,ground:1,flip:1,zup:0,unit:1,kind:'',y:0,r:0,s:1,name:''};
 let WS=(()=>{ try{ return {...WDEF,...JSON.parse(localStorage.getItem('previs-world')||'{}')}; }catch(e){ return {...WDEF}; } })();
 const worldRoot=new THREE.Group(); worldRoot.name='worldRoot'; scene.add(worldRoot);
 let worldObj=null, sparkR=null;
@@ -1316,7 +1318,8 @@ const isSplatPly=buf=>{ const h=new TextDecoder().decode(new Uint8Array(buf,0,Ma
 function applyWorld(){
   worldRoot.visible=!!(worldObj&&WS.vis);
   worldRoot.position.set(0,WS.y,0); worldRoot.rotation.set(0,WS.r*Math.PI/180,0); worldRoot.scale.setScalar(WS.s);
-  if(worldObj) worldObj.rotation.x=WS.flip?Math.PI:0;
+  if(worldObj){ if(WS.kind==='splat'){ worldObj.rotation.x=WS.flip?Math.PI:0; worldObj.scale.setScalar(1); }
+    else { worldObj.rotation.x=WS.zup?-Math.PI/2:0; worldObj.scale.setScalar(+WS.unit||1); } }
   ground.visible=!(worldObj&&WS.vis&&!WS.ground);
   try{ localStorage.setItem('previs-world',JSON.stringify(WS)); }catch(e){}
   renderWorldUI();
@@ -1325,36 +1328,57 @@ function renderWorldUI(){
   const box=document.getElementById('worldCtl'); if(!box) return;
   box.style.display=worldObj?'':'none';
   document.getElementById('worldName').textContent=WS.name||'-';
-  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip']]) document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on',+b.dataset.v===+WS[k]));
+  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip'],['worldZup','zup'],['worldUnit','unit']]) document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on',Math.abs(+b.dataset.v-(+WS[k]))<1e-9));
+  const sp=WS.kind==='splat'; document.getElementById('worldFlipRow').style.display=sp?'':'none'; document.getElementById('worldZupRow').style.display=sp?'none':''; document.getElementById('worldUnitRow').style.display=sp?'none':'';
   for(const [id,k,f] of [['worldY','y',v=>v.toFixed(2)+'m'],['worldR','r',v=>Math.round(v)+'°'],['worldS','s',v=>v.toFixed(2)+'×']]){ document.getElementById(id).value=WS[k]; document.getElementById(id+'v').textContent=f(+WS[k]); }
 }
-async function buildWorld(f){
-  const e=ext(f.name);
-  if(SPLAT_EXT.includes(e)||(e==='ply'&&isSplatPly(f.buf))){
+function lightenMesh(o){ // 레이아웃용: 텍스처 버리고 단색 재질, 그림자 받기만
+  const mats=new Map(); let tris=0;
+  o.traverse(c=>{ if(!(c.isMesh||c.isPoints)) return; c.castShadow=false; c.receiveShadow=true; c.frustumCulled=true;
+    const g=c.geometry; if(g){ tris+=(g.index?g.index.count:(g.attributes.position?g.attributes.position.count:0))/3; if(g.attributes.uv) g.deleteAttribute('uv'); if(g.attributes.uv1) g.deleteAttribute('uv1'); if(g.attributes.uv2) g.deleteAttribute('uv2'); if(g.attributes.tangent) g.deleteAttribute('tangent'); }
+    const conv=m=>{ if(!m) return m; if(mats.has(m)) return mats.get(m);
+      const col=(m.color&&m.color.isColor)?m.color.clone():new THREE.Color(0xb8bcc0);
+      for(const k of ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','bumpMap','alphaMap','lightMap','specularMap','displacementMap']) if(m[k]&&m[k].dispose) m[k].dispose();
+      const n=c.isPoints?new THREE.PointsMaterial({color:col,size:.03,vertexColors:!!(g&&g.attributes.color)}):new THREE.MeshStandardMaterial({color:col,roughness:.9,metalness:0,vertexColors:!!(g&&g.attributes.color),side:THREE.DoubleSide,transparent:!!m.transparent&&m.opacity<1,opacity:m.opacity??1});
+      m.dispose&&m.dispose(); mats.set(m,n); return n; };
+    c.material=Array.isArray(c.material)?c.material.map(conv):conv(c.material); });
+  return Math.round(tris);
+}
+async function buildWorld(files){
+  const isSplat=f=>{ const e=ext(f.name); return SPLAT_EXT.includes(e)||(e==='ply'&&isSplatPly(f.buf)); };
+  const sf=files.find(isSplat);
+  if(sf){
     const mod=await import(SPARK);
     if(!sparkR&&mod.SparkRenderer){ sparkR=new mod.SparkRenderer({renderer}); scene.add(sparkR); }
-    const m=new mod.SplatMesh({fileBytes:new Uint8Array(f.buf),fileName:f.name});
+    const m=new mod.SplatMesh({fileBytes:new Uint8Array(sf.buf),fileName:sf.name});
     if(m.initialized) await m.initialized;
-    return {obj:m,kind:'splat'};
+    return {obj:m,kind:'splat',name:sf.name};
   }
-  if(e==='glb'||e==='gltf'){ const o=await parseModel(f,[]); o.traverse(c=>{ if(c.isMesh){ c.castShadow=false; c.receiveShadow=true; } }); return {obj:o,kind:'mesh'}; }
-  throw new Error('지원하지 않는 형식 ('+e+')');
+  const main=files.find(f=>LOADER_BY[ext(f.name)]);
+  if(!main) throw new Error('지원하는 공간 파일이 없습니다 ('+files.map(f=>ext(f.name)).join(', ')+')');
+  const o=await parseModel(main,files.filter(f=>f!==main));
+  const tris=lightenMesh(o);
+  o.updateMatrixWorld(true); const sz=new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()), mx=Math.max(sz.x,sz.y,sz.z)||1;
+  const unit=mx>20000?.001:mx>2000?.01:1;   // 크기로 단위 추정 (mm·cm·m)
+  const e=ext(main.name), zup=(e==='stl'||e==='3mf'||(sz.z>sz.y*1.5&&e!=='glb'&&e!=='gltf'))?1:0;
+  return {obj:o,kind:'mesh',name:main.name,unit,zup,tris};
 }
 function clearWorld(){ if(worldObj){ worldRoot.remove(worldObj); if(worldObj.dispose) try{worldObj.dispose();}catch(e){} worldObj=null; } }
-async function loadWorldFile(f,fresh){
+async function loadWorldFile(files,fresh){
   toast('공간 불러오는 중…',20000);
   try{
-    const w=await buildWorld(f);
+    const w=await buildWorld(files);
     clearWorld(); worldObj=w.obj; worldRoot.add(worldObj);
-    if(fresh){ WS={...WDEF,name:f.name,flip:w.kind==='splat'?1:0}; try{ await IDB.put({id:'WORLD',name:f.name,files:[f]}); }catch(e){ toast('공간이 커서 다음 실행 때는 다시 불러와야 합니다',3500); } }
-    applyWorld(); toast('공간 불러옴: '+f.name,2500);
+    if(fresh){ WS={...WDEF,name:w.name,kind:w.kind,flip:w.kind==='splat'?1:0,unit:w.unit||1,zup:w.zup||0}; try{ await IDB.put({id:'WORLD',name:w.name,files}); }catch(e){ toast('공간이 커서 다음 실행 때는 다시 불러와야 합니다',3500); } }
+    else WS.kind=w.kind;
+    applyWorld(); toast('공간 불러옴: '+w.name+(w.tris?` · ${(w.tris/1000).toFixed(0)}K 폴리곤`:''),3000);
   }catch(e){ console.error(e); toast('공간 불러오기 실패: '+(e.message||e),4000); }
 }
-async function restoreWorld(){ try{ const all=await IDB.all(); const r=all&&all.find(x=>x.id==='WORLD'); if(r) await loadWorldFile(r.files[0],false); }catch(e){} }
+async function restoreWorld(){ try{ const all=await IDB.all(); const r=all&&all.find(x=>x.id==='WORLD'); if(r) await loadWorldFile(r.files,false); }catch(e){} }
 function bindWorldUI(){
   const $w=id=>document.getElementById(id); if(!$w('worldFile')) return;
-  $w('worldFile').onchange=async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return; await loadWorldFile({name:f.name,buf:await f.arrayBuffer()},true); };
-  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip']]) $w(id).onclick=ev=>{ const b=ev.target.closest('button'); if(!b) return; WS[k]=+b.dataset.v; applyWorld(); };
+  $w('worldFile').onchange=async ev=>{ const list=[...ev.target.files]; ev.target.value=''; if(!list.length) return; await loadWorldFile(await readFiles(list),true); };
+  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip'],['worldZup','zup'],['worldUnit','unit']]) $w(id).onclick=ev=>{ const b=ev.target.closest('button'); if(!b) return; WS[k]=+b.dataset.v; applyWorld(); };
   for(const [id,k] of [['worldY','y'],['worldR','r'],['worldS','s']]) $w(id).oninput=ev=>{ WS[k]=+ev.target.value; applyWorld(); };
   $w('worldDel').onclick=async()=>{ clearWorld(); try{ await IDB.del('WORLD'); }catch(e){} WS={...WDEF}; applyWorld(); toast('공간을 제거했습니다',2000); };
 }

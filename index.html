@@ -1306,7 +1306,7 @@ function buildImported(p){
   g.add(inner); return g;
 }
 /* ===== World Labs 공간 (Gaussian splat / GLB) ===== */
-const SPARK='https://sparkjs.dev/releases/spark/2.1.0/spark.module.js';
+const SPARK='https://sparkjs.dev/releases/spark/2.4.0/spark.module.js';
 const SPLAT_EXT=['spz','splat','ksplat','sog'];
 const WDEF={vis:1,ground:1,flip:1,y:0,r:0,s:1,name:''};
 let WS=(()=>{ try{ return {...WDEF,...JSON.parse(localStorage.getItem('previs-world')||'{}')}; }catch(e){ return {...WDEF}; } })();

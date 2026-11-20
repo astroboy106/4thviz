@@ -1720,6 +1720,8 @@ function layoutOverlay(){
 }
 
 let hideForCapture=false;
+const dimScene=new THREE.Scene(), dimCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+dimScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.5,depthTest:false,depthWrite:false})));
 function render(){
   renderer.setScissor(0,0,SW,SH); renderer.setViewport(0,0,SW,SH);
   renderer.setClearColor(0x050506,1); renderer.clear();
@@ -1731,6 +1733,7 @@ function render(){
   if(selBox){selBox.update(); selBox.visible=!hideForCapture;} updateGizmo();
   renderer.setViewport(fr.x,SH-fr.y-fr.h,fr.w,fr.h); renderer.setScissor(fr.x,SH-fr.y-fr.h,fr.w,fr.h);
   if(S.full&&S.dof) renderDOF(fr); else renderer.render(scene,shotCam);
+  if(S.map&&S.mapBig&&!hideForCapture){ const ac=renderer.autoClear; renderer.autoClear=false; renderer.render(dimScene,dimCam); renderer.autoClear=ac; } // 탑뷰 확대 시 뒤 화면 50% 어둡게
   if(S.map&&!hideForCapture){
     const pr=pipRect(); setupTopCam();
     aimMk.position.copy(aimPoint3()); aimLine.geometry.setFromPoints([isPlanView()?new THREE.Vector3(S.cam.pos[0],.05,S.cam.pos[2]):new THREE.Vector3().fromArray(S.cam.pos),aimMk.position.clone()]); aimMk.scale.setScalar(S.mapZoom/18); camIcon.scale.setScalar(Math.max(1,S.mapZoom/18));

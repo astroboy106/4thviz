@@ -447,6 +447,21 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
         <input type="file" id="impFile" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
         <div class="note">GLB · GLTF · FBX · OBJ(+MTL·텍스처) · DAE · USDZ · 3DS · 3MF · STL · PLY · WRL · AMF, 또는 이 파일들을 묶은 ZIP. 텍스처는 모델과 함께 선택하세요. 화면에 파일을 끌어놓아도 됩니다.</div>
       </div>
+      <div class="sec"><h4>World Labs 공간</h4>
+        <label class="btn imp" for="worldFile">공간 불러오기 (Marble · Atlas)</label>
+        <input type="file" id="worldFile" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+        <div class="note">SPZ · PLY(스플랫) · SPLAT · KSPLAT · SOG 스플랫, 또는 GLB 메시. 아이패드에서는 500K 스플랫을 권장합니다.</div>
+        <div id="worldCtl" style="display:none">
+          <div class="row"><label class="l" id="worldName">-</label></div>
+          <div class="row"><label class="l">표시</label><div class="seg" id="worldVis"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+          <div class="row"><label class="l">기본 바닥</label><div class="seg" id="worldGround"><button data-v="1">보이기</button><button data-v="0">숨기기</button></div></div>
+          <div class="row"><label class="l">상하 뒤집기</label><div class="seg" id="worldFlip"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+          <div class="row"><label class="l">높이 <span id="worldYv"></span></label><input type="range" id="worldY" min="-10" max="10" step="0.05"></div>
+          <div class="row"><label class="l">방향 <span id="worldRv"></span></label><input type="range" id="worldR" min="-180" max="180" step="1"></div>
+          <div class="row"><label class="l">크기 <span id="worldSv"></span></label><input type="range" id="worldS" min="0.1" max="5" step="0.05"></div>
+          <button class="btn" id="worldDel" style="width:100%;margin-top:6px">공간 제거</button>
+        </div>
+      </div>
       <div class="row"><input id="assetSearch" type="search" placeholder="에셋 검색 (예: 자전거, 버스, 조명)"></div>
       <div class="chips cats" id="catChips"></div>
       <div class="grid3" id="assetGrid" style="margin-top:10px"></div>
@@ -575,7 +590,7 @@ html.pwa{--sat:max(env(safe-area-inset-top),24px)}
 <div id="confirm" class="modal2"><div class="box"><div id="cfMsg" style="font-size:13px;line-height:1.6;margin-bottom:12px"></div><div class="mb"><button class="btn danger" id="cfYes">삭제</button><button class="btn" id="cfNo">취소</button></div></div></div>
 <div id="modal"><div class="box"><h4 style="margin:0 0 8px;font:600 11px var(--mono);letter-spacing:.12em;color:var(--tx3)">SHOT LIST</h4><textarea id="slText" readonly></textarea><div class="mb"><button class="btn acc" id="slCopy">복사</button><button class="btn" id="slClose">닫기</button></div></div></div>
 
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
 
@@ -1220,7 +1235,7 @@ const CAT_ICON={
 const iconFor=k=>CAT_ICON[KINDS[k].cat]||CAT_ICON.basic;
 
 /* ================= IMPORT ================= */
-const ADDON='https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/';
+const ADDON='https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/';
 const LOADER_BY={glb:'GLTFLoader',gltf:'GLTFLoader',fbx:'FBXLoader',obj:'OBJLoader',stl:'STLLoader',ply:'PLYLoader',dae:'ColladaLoader','3ds':'TDSLoader','3mf':'ThreeMFLoader',usdz:'USDZLoader',wrl:'VRMLLoader',vrml:'VRMLLoader',amf:'AMFLoader'};
 const UNITS={auto:null,m:1,cm:.01,mm:.001,in:.0254,ft:.3048};
 const LIB=new Map(); let SKU=null; let PENDING=[];
@@ -1282,6 +1297,59 @@ function buildImported(p){
   inner.position.set(-ctr.x,-b.min.y,-ctr.z);
   g.add(inner); return g;
 }
+/* ===== World Labs 공간 (Gaussian splat / GLB) ===== */
+const SPARK='https://sparkjs.dev/releases/spark/2.1.0/spark.module.js';
+const SPLAT_EXT=['spz','splat','ksplat','sog'];
+const WDEF={vis:1,ground:1,flip:1,y:0,r:0,s:1,name:''};
+let WS=(()=>{ try{ return {...WDEF,...JSON.parse(localStorage.getItem('previs-world')||'{}')}; }catch(e){ return {...WDEF}; } })();
+const worldRoot=new THREE.Group(); worldRoot.name='worldRoot'; scene.add(worldRoot);
+let worldObj=null, sparkR=null;
+const isSplatPly=buf=>{ const h=new TextDecoder().decode(new Uint8Array(buf,0,Math.min(buf.byteLength,4096))); return /f_dc_0|scale_0|rot_0/.test(h); };
+function applyWorld(){
+  worldRoot.visible=!!(worldObj&&WS.vis);
+  worldRoot.position.set(0,WS.y,0); worldRoot.rotation.set(0,WS.r*Math.PI/180,0); worldRoot.scale.setScalar(WS.s);
+  if(worldObj) worldObj.rotation.x=WS.flip?Math.PI:0;
+  ground.visible=!(worldObj&&WS.vis&&!WS.ground);
+  try{ localStorage.setItem('previs-world',JSON.stringify(WS)); }catch(e){}
+  renderWorldUI();
+}
+function renderWorldUI(){
+  const box=document.getElementById('worldCtl'); if(!box) return;
+  box.style.display=worldObj?'':'none';
+  document.getElementById('worldName').textContent=WS.name||'-';
+  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip']]) document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on',+b.dataset.v===+WS[k]));
+  for(const [id,k,f] of [['worldY','y',v=>v.toFixed(2)+'m'],['worldR','r',v=>Math.round(v)+'°'],['worldS','s',v=>v.toFixed(2)+'×']]){ document.getElementById(id).value=WS[k]; document.getElementById(id+'v').textContent=f(+WS[k]); }
+}
+async function buildWorld(f){
+  const e=ext(f.name);
+  if(SPLAT_EXT.includes(e)||(e==='ply'&&isSplatPly(f.buf))){
+    const mod=await import(SPARK);
+    if(!sparkR&&mod.SparkRenderer){ sparkR=new mod.SparkRenderer({renderer}); scene.add(sparkR); }
+    const m=new mod.SplatMesh({fileBytes:new Uint8Array(f.buf),fileName:f.name});
+    if(m.initialized) await m.initialized;
+    return {obj:m,kind:'splat'};
+  }
+  if(e==='glb'||e==='gltf'){ const o=await parseModel(f,[]); o.traverse(c=>{ if(c.isMesh){ c.castShadow=false; c.receiveShadow=true; } }); return {obj:o,kind:'mesh'}; }
+  throw new Error('지원하지 않는 형식 ('+e+')');
+}
+function clearWorld(){ if(worldObj){ worldRoot.remove(worldObj); if(worldObj.dispose) try{worldObj.dispose();}catch(e){} worldObj=null; } }
+async function loadWorldFile(f,fresh){
+  toast('공간 불러오는 중…',20000);
+  try{
+    const w=await buildWorld(f);
+    clearWorld(); worldObj=w.obj; worldRoot.add(worldObj);
+    if(fresh){ WS={...WDEF,name:f.name,flip:w.kind==='splat'?1:0}; try{ await IDB.put({id:'WORLD',name:f.name,files:[f]}); }catch(e){ toast('공간이 커서 다음 실행 때는 다시 불러와야 합니다',3500); } }
+    applyWorld(); toast('공간 불러옴: '+f.name,2500);
+  }catch(e){ console.error(e); toast('공간 불러오기 실패: '+(e.message||e),4000); }
+}
+async function restoreWorld(){ try{ const all=await IDB.all(); const r=all&&all.find(x=>x.id==='WORLD'); if(r) await loadWorldFile(r.files[0],false); }catch(e){} }
+function bindWorldUI(){
+  const $w=id=>document.getElementById(id); if(!$w('worldFile')) return;
+  $w('worldFile').onchange=async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return; await loadWorldFile({name:f.name,buf:await f.arrayBuffer()},true); };
+  for(const [id,k] of [['worldVis','vis'],['worldGround','ground'],['worldFlip','flip']]) $w(id).onclick=ev=>{ const b=ev.target.closest('button'); if(!b) return; WS[k]=+b.dataset.v; applyWorld(); };
+  for(const [id,k] of [['worldY','y'],['worldR','r'],['worldS','s']]) $w(id).oninput=ev=>{ WS[k]=+ev.target.value; applyWorld(); };
+  $w('worldDel').onclick=async()=>{ clearWorld(); try{ await IDB.del('WORLD'); }catch(e){} WS={...WDEF}; applyWorld(); toast('공간을 제거했습니다',2000); };
+}
 async function ensureSKU(){ if(!SKU){ try{SKU=await import(ADDON+'utils/SkeletonUtils.js');}catch(e){} } }
 async function importFiles(list){
   list=[...list]; if(!list.length) return;
@@ -1308,7 +1376,7 @@ async function importFiles(list){
 async function restoreLibs(){
   try{
     const all=await IDB.all();
-    if(all&&all.length){ await ensureSKU(); for(const r of all){ try{ registerLib(r.id,r.name,await parseModel(r.files[0],r.files.slice(1))); }catch(e){console.error(e);} } }
+    if(all&&all.length){ await ensureSKU(); for(const r of all){ if(r.id==='WORLD') continue; try{ registerLib(r.id,r.name,await parseModel(r.files[0],r.files.slice(1))); }catch(e){console.error(e);} } }
   }catch(e){}
   const pend=PENDING; PENDING=[];
   pend.forEach(o=>{ if(LIB.has(o.p.lib)) addObject('imported',{uid:o.u,params:o.p,pos:o.pos,rot:o.rot,scale:o.scale,silent:true}); });
@@ -2849,6 +2917,7 @@ startup(); renderMapViews();
 $('#loading').style.display='none';
 requestAnimationFrame(loop);
 restoreLibs();
+bindWorldUI(); restoreWorld();
 </script>
 <script>
 (function(){
